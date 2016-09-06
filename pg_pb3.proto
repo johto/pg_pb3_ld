@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-package test;
-
 enum WireMessageType {
     WMSG_BEGIN      = 0;
     WMSG_COMMIT     = 1;

@@ -5,3 +5,4 @@
 /decoder/pb3.o
 /decoder/utils.o
 /tests/proto.pb.go
+/tests/proto.proto
