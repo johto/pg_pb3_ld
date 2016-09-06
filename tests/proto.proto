@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package test;
+
+enum WireMessageType {
+    WMSG_BEGIN      = 0;
+    WMSG_COMMIT     = 1;
+    WMSG_INSERT     = 2;
+    WMSG_UPDATE     = 3;
+    WMSG_DELETE     = 4;
+}
+
+message WireMessageHeader {
+    WireMessageType typ = 1;
+}
+
+message BeginTransaction {
+}
+
+message CommitTransaction {
+}
+
+message TableDescription {
+    string schema_name = 1;
+    string table_name = 2;
+    uint32 table_oid = 3;
+}
+
+message InsertDescription {
+    TableDescription table = 1;
+    FieldSetDescription new_values = 2;
+}
+
+message UpdateDescription {
+    TableDescription table = 1;
+    FieldSetDescription key_fields = 2;
+    FieldSetDescription new_values = 3;
+}
+
+message DeleteDescription {
+    TableDescription table = 1;
+    FieldSetDescription key_fields = 2;
+}
+
+message FieldSetDescription {
+    repeated string names = 2;
+    repeated bytes values = 3;
+    repeated uint32 type_oids = 4;
+    bytes null_bitmap = 5;
+    bytes binary_bitmap = 6;
+}
