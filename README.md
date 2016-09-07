@@ -62,6 +62,11 @@ minimum value, and no two ranges should overlap.
 
 The default is an empty list, i.e. all types are sent over as text.
 
+Examples:
+
+  1-9999       sends all values of built-in types over in binary
+  17,20-21,23  sends bytea, int2, int4 and int8 values over in binary
+
 ##### enable\_table\_oids (*bool*)
 
 If enabled, each *TableDescription* message includes the oid of the target
