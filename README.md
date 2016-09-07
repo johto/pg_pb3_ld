@@ -30,39 +30,39 @@ and connect to it.  The replication level `START_REPLICATION` command can
 specify a list of options which control various details of the decoding output.
 The options supported by the plugin are:
 
-###### enable\_begin\_messages (*bool*)
+##### enable\_begin\_messages (*bool*)
 
 If enabled, a *BeginTransaction* message is sent at the beginning of each
 decoded transaction.
 
 The default is *false*.
 
-###### enable\_commit\_messages (*bool*)
+##### enable\_commit\_messages (*bool*)
 
 If enabled, a *CommitTransaction* message is sent at the end of each decoded
 transaction.
 
 The default is *true*.
 
-###### enable\_type\_oids (*bool*)
+##### enable\_type\_oids (*bool*)
 
 If enabled, each *FieldSetDescription* message includes the oid of each field
 in the *type_oids* repeated field.
 
 The default is *false*.
 
-###### binary\_oid\_ranges (*oid range list*)
+##### binary\_oid\_ranges (*oid range list*)
 
 A comma-specified list of oid ranges to decode as binary values.  The minimum
-and maximum of a range should be separated by HYPHEN-MINUS (-).  Both minimum
-and maximum of a range are inclusive.  A single value can be specified by
-omitting the maximum value and the HYPHEN-MINUS character.  The ranges should
-appear in the list ordered by their minimum value, and no two ranges should
-overlap.
+and the maximum of a range should be separated by HYPHEN-MINUS (-).  Both the
+minimum and the maximum of a range are inclusive, i.e. all ranges are closed.
+A single value can be specified by omitting the maximum value and the
+HYPHEN-MINUS character.  The ranges should appear in the list ordered by their
+minimum value, and no two ranges should overlap.
 
 The default is an empty list, i.e. all types are sent over as text.
 
-###### enable\_table\_oids (*bool*)
+##### enable\_table\_oids (*bool*)
 
 If enabled, each *TableDescription* message includes the oid of the target
 table in the *table_oid* field.
