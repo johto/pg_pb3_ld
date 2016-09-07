@@ -53,7 +53,7 @@ The default is *false*.
 
 ##### binary\_oid\_ranges (*oid range list*)
 
-A comma-specified list of oid ranges to decode as binary values.  The minimum
+A comma-separated list of oid ranges to decode as binary values.  The minimum
 and the maximum of a range should be separated by HYPHEN-MINUS (-).  Both the
 minimum and the maximum of a range are inclusive, i.e. all ranges are closed.
 A single value can be specified by omitting the maximum value and the
