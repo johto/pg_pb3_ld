@@ -60,7 +60,8 @@ A single value can be specified by omitting the maximum value and the
 HYPHEN-MINUS character.  The ranges should appear in the list ordered by their
 minimum value, and no two ranges should overlap.
 
-The default is an empty list, i.e. all types are sent over as text.
+The default is the empty list, meaning that all values are sent to the client
+in text format.
 
 Examples:
 
