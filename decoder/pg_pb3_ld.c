@@ -130,7 +130,7 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 
 	privdata->repl_identity_required = true;
 
-	privdata->type_oids_enabled = false;
+	privdata->type_oids_mode = PB3LD_FSD_TYPE_OIDS_DISABLED;
 	privdata->binary_oid_ranges = NULL;
 	privdata->num_binary_oid_ranges = 0;
 	privdata->formats_mode = PB3LD_FSD_FORMATS_DISABLED;
@@ -163,14 +163,25 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
-		else if (strcmp(elem->defname, "enable_type_oids") == 0)
+		else if (strcmp(elem->defname, "type_oids_mode") == 0)
 		{
+			char *mode;
+
 			if (elem->arg == NULL)
-				privdata->type_oids_enabled = true;
-			else if (!parse_bool(strVal(elem->arg), &privdata->type_oids_enabled))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
+						 errmsg("formats_mode requires an argument")));
+			mode = strVal(elem->arg);
+			if (strcmp(mode, "disabled") == 0)
+				privdata->type_oids_mode = PB3LD_FSD_TYPE_OIDS_DISABLED;
+			else if (strcmp(mode, "omit_nulls") == 0)
+				privdata->type_oids_mode = PB3LD_FSD_TYPE_OIDS_OMIT_NULLS;
+			else if (strcmp(mode, "full") == 0)
+				privdata->type_oids_mode = PB3LD_FSD_TYPE_OIDS_FULL;
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("\"%s\" is not a valid value for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
 		else if (strcmp(elem->defname, "binary_oid_ranges") == 0)
@@ -360,8 +371,20 @@ pb3ld_fds_attribute(const PB3LD_Private *privdata,
 
 	pb3_append_string_kv(s, PB3LD_FSD_NAMES, attname);
 
-	if (privdata->type_oids_enabled)
-		pb3_append_oid_kv(s, PB3LD_FSD_TYPE_OIDS, typid);
+	switch (privdata->type_oids_mode)
+	{
+		case PB3LD_FSD_TYPE_OIDS_DISABLED:
+			break;
+		case PB3LD_FSD_TYPE_OIDS_OMIT_NULLS:
+			if (!isnull)
+				pb3_append_oid_kv(s, PB3LD_FSD_TYPE_OIDS, typid);
+			break;
+		case PB3LD_FSD_TYPE_OIDS_FULL:
+			pb3_append_oid_kv(s, PB3LD_FSD_TYPE_OIDS, typid);
+			break;
+		default:
+			elog(ERROR, "unexpected type_oids_mode %d", (int) fds->privdata->type_oids_mode);
+	}
 }
 
 static void

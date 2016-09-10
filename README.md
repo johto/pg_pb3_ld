@@ -44,12 +44,18 @@ transaction.
 
 The default is *true*.
 
-##### enable\_type\_oids (*bool*)
+##### type\_oids\_mode (*enum*)
 
-If enabled, each *FieldSetDescription* message includes the oid of each field
-in the *type_oids* repeated field.
+Controls how the `type_oids` field in *FieldSetDescription* messages is written.
 
-The default is *false*.
+There are three supported modes:
+
+  1. In `disabled` mode the `type_oids` protocol fields are never present.
+  2. In `omit_nulls` mode, the `type_oids` protocol fields contain only the
+  type oids of non-NULL fields.
+  3. In `full` mode the full list of type oids is always provided.
+
+The default is *disabled*.
 
 ##### binary\_oid\_ranges (*oid range list*)
 
@@ -72,10 +78,10 @@ Examples:
 
 Controls how the `formats` field in *FieldSetDescription* messages is written.
 
-Possible values are:
+There are three supported modes:
 
-  1. In `disabled` mode the `formats` fields are never present.
-  2. In `libpq` mode the `formats` field contains one byte per field in the
+  1. In `disabled` mode the `formats` protocol fields are never present.
+  2. In `libpq` mode the `formats` fields contain one byte per field in the
   set.  A zero byte ('\x00') means the value is in text format, and a one
   ('\x01') means the value is in binary.  As a special case, if this field is
   omitted, all values are in text format.

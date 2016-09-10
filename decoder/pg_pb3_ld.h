@@ -8,6 +8,12 @@
 /* pg_pb3_ld.c */
 
 typedef enum {
+	PB3LD_FSD_TYPE_OIDS_DISABLED,
+	PB3LD_FSD_TYPE_OIDS_OMIT_NULLS,
+	PB3LD_FSD_TYPE_OIDS_FULL,
+} PB3LD_FSD_Type_Oids_Mode;
+
+typedef enum {
 	PB3LD_FSD_FORMATS_DISABLED,
 	PB3LD_FSD_FORMATS_LIBPQ,
 	PB3LD_FSD_FORMATS_FULL,
@@ -24,7 +30,7 @@ typedef struct
 
 	bool	repl_identity_required;
 
-	bool	type_oids_enabled;
+	bool	type_oids_mode;
 	Oid	   *binary_oid_ranges;
 	int		num_binary_oid_ranges;
 	PB3LD_FSD_Formats_Mode formats_mode;
