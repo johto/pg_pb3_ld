@@ -373,7 +373,7 @@ COMMIT;
 }
 
 // This is supposed to test pb3_fix_reserved_length.  It's relying quite a lot
-// on the exact structure of the message, bbut I'm a bit too lazy to build any
+// on the exact structure of the message, but I'm a bit too lazy to build any
 // better tests for this right now.
 func TestMessageLengthCornerCases(t *testing.T) {
 	dbh := testSetup(t)
