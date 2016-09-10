@@ -12,16 +12,11 @@ message WireMessageHeader {
     WireMessageType typ = 1;
 }
 
+
 message BeginTransaction {
 }
 
 message CommitTransaction {
-}
-
-message TableDescription {
-    string schema_name = 1;
-    string table_name = 2;
-    uint32 table_oid = 3;
 }
 
 message InsertDescription {
@@ -38,6 +33,12 @@ message UpdateDescription {
 message DeleteDescription {
     TableDescription table = 1;
     FieldSetDescription key_fields = 2;
+}
+
+message TableDescription {
+    string schema_name = 1;
+    string table_name = 2;
+    uint32 table_oid = 3;
 }
 
 message FieldSetDescription {
