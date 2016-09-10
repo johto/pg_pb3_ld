@@ -68,6 +68,22 @@ Examples:
   1. `1-9999` sends all values of built-in types over in binary
   2. `17,20-21,23` sends bytea, int2, int4 and int8 values over in binary
 
+##### formats\_mode (*enum*)
+
+Controls how the `formats` field in *FieldSetDescription* messages is written.
+
+Possible values are:
+
+  1. In `disabled` mode the `formats` fields are never present.
+  2. In `libpq` mode the `formats` field contains one byte per field in the
+  set.  A zero byte ('\x00') means the value is in text format, and a one
+  ('\x01') means the value is in binary.  As a special case, if this field is
+  omitted, all values are in text format.
+  3. The `full` mode works exactly the same way as `libpq` mode, except the
+  field is never omitted.
+
+The default is *disabled*.
+
 ##### enable\_table\_oids (*bool*)
 
 If enabled, each *TableDescription* message includes the oid of the target

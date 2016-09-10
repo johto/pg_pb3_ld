@@ -141,6 +141,23 @@ func createNulls(options []string, vals ...int) []byte {
 	return bm
 }
 
+func createFormats(options []string, vals ...int) []byte {
+	var bm []byte
+
+	_ = options
+	if true {
+		currentFormat := byte(0)
+		for _, l := range vals {
+			for i := 0; i < l; i++ {
+				bm = append(bm, currentFormat)
+			}
+			currentFormat = 1 - currentFormat
+		}
+	}
+	return bm
+}
+
+
 func testTeardown(t *testing.T, dbh *sql.DB) {
 	_, _ = dbh.Exec("SELECT pg_drop_replication_slot($1)", replicationSlotName)
 	_ = dbh.Close()

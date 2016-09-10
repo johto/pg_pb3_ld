@@ -59,6 +59,7 @@ typedef struct
 
 	Relation relation;
 	StringInfoData nulls;
+	StringInfoData formats;
 } PB3LD_FieldSetDescription;
 
 extern void _PG_init(void);
@@ -75,6 +76,8 @@ static void pb3ld_fds_init(const PB3LD_Private *privdata,
 						   Relation relation);
 static void pb3ld_fds_append_null(PB3LD_FieldSetDescription *fds, bool isnull);
 static void pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out);
+static void pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, int format);
+static void pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out);
 static bool pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid);
 static void pb3ld_write_FieldSetDescription(const PB3LD_Private *privdata,
 											const int reserved_len,
@@ -130,6 +133,7 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	privdata->type_oids_enabled = false;
 	privdata->binary_oid_ranges = NULL;
 	privdata->num_binary_oid_ranges = 0;
+	privdata->formats_mode = PB3LD_FSD_FORMATS_DISABLED;
 
 	privdata->table_oids_enabled = false;
 
@@ -176,6 +180,28 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("binary_oid_ranges requires an argument")));
 			pb3ld_parse_binary_oid_ranges(privdata, strVal(elem->arg));
+		}
+		else if (strcmp(elem->defname, "formats_mode") == 0)
+		{
+			char *mode;
+
+			if (elem->arg == NULL)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("formats_mode requires an argument")));
+			mode = strVal(elem->arg);
+			if (strcmp(mode, "disabled") == 0)
+				privdata->formats_mode = PB3LD_FSD_FORMATS_DISABLED;
+			else if (strcmp(mode, "libpq") == 0)
+				privdata->formats_mode = PB3LD_FSD_FORMATS_LIBPQ;
+			else if (strcmp(mode, "full") == 0)
+				privdata->formats_mode = PB3LD_FSD_FORMATS_FULL;
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("\"%s\" is not a valid value for parameter \"%s\"",
+								strVal(elem->arg), elem->defname)));
+
 		}
 		else if (strcmp(elem->defname, "enable_table_oids") == 0)
 		{
@@ -271,6 +297,8 @@ pb3ld_fds_attribute(const PB3LD_Private *privdata,
 	if (isnull)
 	{
 		pb3ld_fds_append_null(fds, true);
+		/* don't care about the format */
+		pb3ld_fds_append_format(fds, 0);
 		pb3_append_bytes_kv(s, PB3LD_FSD_VALUES, NULL, 0);
 	}
 	else
@@ -315,12 +343,14 @@ pb3ld_fds_attribute(const PB3LD_Private *privdata,
 
 		if (binary_output)
 		{
+			pb3ld_fds_append_format(fds, 1);
 			bytea *val = OidSendFunctionCall(typoutput, valdatum);
 			valuedata = VARDATA(val);
 			valuelen = VARSIZE(val) - VARHDRSZ;
 		}
 		else
 		{
+			pb3ld_fds_append_format(fds, 0);
 			valuedata = OidOutputFunctionCall(typoutput, valdatum);
 			valuelen = strlen(valuedata);
 		}
@@ -337,10 +367,14 @@ pb3ld_fds_attribute(const PB3LD_Private *privdata,
 static void
 pb3ld_fds_init(const PB3LD_Private *privdata, PB3LD_FieldSetDescription *fds, Relation relation)
 {
+	memset(fds, 0, sizeof(PB3LD_FieldSetDescription));
+
 	fds->privdata = privdata;
 
-	initStringInfo(&fds->nulls);
 	fds->relation = relation;
+	initStringInfo(&fds->nulls);
+	if (privdata->formats_mode != PB3LD_FSD_FORMATS_DISABLED)
+		initStringInfo(&fds->formats);
 }
 
 static void
@@ -356,6 +390,54 @@ static void
 pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out)
 {
 	pb3_append_bytes_kv(out, PB3LD_FSD_NULLS, fds->nulls.data, fds->nulls.len);
+}
+
+static void
+pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, int format)
+{
+	switch (fds->privdata->formats_mode)
+	{
+		case PB3LD_FSD_FORMATS_DISABLED:
+			return;
+		case PB3LD_FSD_FORMATS_LIBPQ:
+			/* fallthrough; handled in pb3ld_fds_write_formats */
+		case PB3LD_FSD_FORMATS_FULL:
+			appendStringInfoChar(&fds->formats, format);
+			break;
+		default:
+			elog(ERROR, "unexpected formats_mode %d", (int) fds->privdata->formats_mode);
+	}
+}
+
+static void
+pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out)
+{
+	int i;
+
+	switch (fds->privdata->formats_mode)
+	{
+		case PB3LD_FSD_FORMATS_DISABLED:
+			return;
+		case PB3LD_FSD_FORMATS_LIBPQ:
+			for (i = 0;;i++)
+			{
+				if (i == fds->formats.len)
+				{
+					/* only text values; omit the "formats" field */
+					return;
+				}
+
+				if (fds->formats.data[i] != 0)
+					break;
+			}
+			pb3_append_bytes_kv(out, PB3LD_FSD_FORMATS, fds->formats.data, fds->formats.len);
+			break;
+		case PB3LD_FSD_FORMATS_FULL:
+			pb3_append_bytes_kv(out, PB3LD_FSD_FORMATS, fds->formats.data, fds->formats.len);
+			break;
+		default:
+			elog(ERROR, "unexpected formats_mode %d", (int) fds->privdata->formats_mode);
+	}
 }
 
 static bool
@@ -462,6 +544,7 @@ pb3ld_write_FieldSetDescription(const PB3LD_Private *privdata,
 	}
 
 	pb3ld_fds_write_nulls(&fds, out);
+	pb3ld_fds_write_formats(&fds, out);
 
 	pb3_fix_reserved_length(out, reserved_start, reserved_len);
 }

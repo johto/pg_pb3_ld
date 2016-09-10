@@ -7,6 +7,12 @@
 
 /* pg_pb3_ld.c */
 
+typedef enum {
+	PB3LD_FSD_FORMATS_DISABLED,
+	PB3LD_FSD_FORMATS_LIBPQ,
+	PB3LD_FSD_FORMATS_FULL,
+} PB3LD_FSD_Formats_Mode;
+
 typedef struct
 {
 	MemoryContext context;
@@ -21,6 +27,7 @@ typedef struct
 	bool	type_oids_enabled;
 	Oid	   *binary_oid_ranges;
 	int		num_binary_oid_ranges;
+	PB3LD_FSD_Formats_Mode formats_mode;
 
 	bool	table_oids_enabled;
 } PB3LD_Private;
