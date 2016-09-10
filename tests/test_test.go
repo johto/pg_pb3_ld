@@ -205,6 +205,8 @@ func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMe
 		}
 		data = data[2:]
 
+		var receivedTextFormat string
+
 		var msg interface{}
 		switch wireMsg.Typ {
 			case WireMessageType_WMSG_BEGIN:
@@ -213,6 +215,7 @@ func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMe
 				if err != nil {
 					t.Fatal(err)
 				}
+				receivedTextFormat = proto.MarshalTextString(begin)
 				msg = begin
 			case WireMessageType_WMSG_COMMIT:
 				commit := &CommitTransaction{}
@@ -220,14 +223,15 @@ func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMe
 				if err != nil {
 					t.Fatal(err)
 				}
+				receivedTextFormat = proto.MarshalTextString(commit)
 				msg = commit
 			case WireMessageType_WMSG_INSERT:
 				ins := &InsertDescription{}
 				err = proto.Unmarshal(data, ins)
 				if err != nil {
-					t.Errorf("%q", data)
 					t.Fatal(err)
 				}
+				receivedTextFormat = proto.MarshalTextString(ins)
 				msg = ins
 			case WireMessageType_WMSG_UPDATE:
 				upd := &UpdateDescription{}
@@ -235,6 +239,7 @@ func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMe
 				if err != nil {
 					t.Fatal(err)
 				}
+				receivedTextFormat = proto.MarshalTextString(upd)
 				msg = upd
 			case WireMessageType_WMSG_DELETE:
 				del := &DeleteDescription{}
@@ -242,6 +247,7 @@ func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMe
 				if err != nil {
 					t.Fatal(err)
 				}
+				receivedTextFormat = proto.MarshalTextString(del)
 				msg = del
 			default:
 				t.Fatalf("unknown wire message type %+#v", wireMsg.Typ)
@@ -252,8 +258,10 @@ func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMe
 		}
 
 		if !reflect.DeepEqual(msg, expectedMessages[0]) {
-			t.Fatalf("message number %d does not match: %T:%+v != %T:%+v",
+			t.Logf("message number %d does not match: %T:%+v != %T:%+v",
 					 messageNum, msg, msg, expectedMessages[0], expectedMessages[0])
+			t.Logf("received message was: %s", receivedTextFormat)
+			t.FailNow()
 		}
 
 		expectedMessages = expectedMessages[1:]
