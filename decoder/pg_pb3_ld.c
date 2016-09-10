@@ -30,7 +30,7 @@
 /* UpdateDescription */
 #define PB3LD_UPD_TABLE_DESC	1
 #define PB3LD_UPD_KEY_FIELDS	3
-#define PB3LD_UPD_NEW_VALUES	4
+#define PB3LD_UPD_NEW_VALUES	5
 
 /* DeleteDescription */
 #define PB3LD_DEL_TABLE_DESC	1
