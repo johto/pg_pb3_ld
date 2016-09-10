@@ -40,8 +40,8 @@
 #define PB3LD_FSD_NAMES			2
 #define PB3LD_FSD_VALUES		3
 #define PB3LD_FSD_TYPE_OIDS		4
-#define PB3LD_FSD_NULL_BITMAP	5
-#define PB3LD_FSD_BINARY_BITMAP	6
+#define PB3LD_FSD_NULLS			5
+#define PB3LD_FSD_FORMATS		6
 
 /* TableDescription */
 #define PB3LD_TD_SCHEMANAME		1
@@ -355,7 +355,7 @@ pb3ld_fds_append_null(PB3LD_FieldSetDescription *fds, bool isnull)
 static void
 pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out)
 {
-	pb3_append_bytes_kv(out, PB3LD_FSD_NULL_BITMAP, fds->nulls.data, fds->nulls.len);
+	pb3_append_bytes_kv(out, PB3LD_FSD_NULLS, fds->nulls.data, fds->nulls.len);
 }
 
 static bool

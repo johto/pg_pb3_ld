@@ -44,6 +44,6 @@ message FieldSetDescription {
     repeated string names = 2;
     repeated bytes values = 3;
     repeated uint32 type_oids = 4;
-    bytes null_bitmap = 5;
-    bytes binary_bitmap = 6;
+    bytes nulls = 5;
+    bytes formats = 6;
 }

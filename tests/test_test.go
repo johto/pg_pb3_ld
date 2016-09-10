@@ -125,7 +125,7 @@ func createStringValues(numValues int, vals ...string) [][]byte {
 	return ret
 }
 
-func createNullBitmap(options []string, vals ...int) []byte {
+func createNulls(options []string, vals ...int) []byte {
 	var bm []byte
 
 	_ = options
@@ -292,7 +292,7 @@ COMMIT;
 			NewValues: &FieldSetDescription{
 				Names: tenk1FieldNames,
 				Values: createStringValues(16, "1"),
-				NullBitmap: createNullBitmap(options,1,15),
+				Nulls: createNulls(options,1,15),
 			},
 		},
 	)
@@ -302,12 +302,12 @@ COMMIT;
 			NewValues: &FieldSetDescription{
 				Names: tenk1FieldNames,
 				Values: createStringValues(16, "1", "-20"),
-				NullBitmap: createNullBitmap(options,2,14),
+				Nulls: createNulls(options,2,14),
 			},
 			KeyFields: &FieldSetDescription{
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -317,7 +317,7 @@ COMMIT;
 			KeyFields: &FieldSetDescription{
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -406,7 +406,7 @@ COMMIT;
 			NewValues: &FieldSetDescription{
 				Names: tblIdentityFullFieldNames,
 				Values: createStringValues(2, "1", strings.Repeat("j", repeat_length)),
-				NullBitmap: createNullBitmap(options,2),
+				Nulls: createNulls(options,2),
 			},
 		}
 	}
@@ -452,7 +452,7 @@ COMMIT;
 				Names: tenk1FieldNames,
 				Values: createStringValues(16, "1"),
 				TypeOids: tenk1FieldTypeOids,
-				NullBitmap: createNullBitmap(options,1,15),
+				Nulls: createNulls(options,1,15),
 			},
 		},
 	)
@@ -463,13 +463,13 @@ COMMIT;
 				Names: tenk1FieldNames,
 				Values: createStringValues(16, "1", "-20"),
 				TypeOids: tenk1FieldTypeOids,
-				NullBitmap: createNullBitmap(options,2,14),
+				Nulls: createNulls(options,2,14),
 			},
 			KeyFields: &FieldSetDescription{
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
 				TypeOids: tenk1FieldTypeOids[:1],
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -480,7 +480,7 @@ COMMIT;
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
 				TypeOids: tenk1FieldTypeOids[:1],
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -515,7 +515,7 @@ COMMIT;
 			NewValues: &FieldSetDescription{
 				Names: tenk1FieldNames,
 				Values: createStringValues(16, "1"),
-				NullBitmap: createNullBitmap(options,1,15),
+				Nulls: createNulls(options,1,15),
 			},
 		},
 	)
@@ -525,12 +525,12 @@ COMMIT;
 			NewValues: &FieldSetDescription{
 				Names: tenk1FieldNames,
 				Values: createStringValues(16, "1", "-20"),
-				NullBitmap: createNullBitmap(options,2,14),
+				Nulls: createNulls(options,2,14),
 			},
 			KeyFields: &FieldSetDescription{
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -540,7 +540,7 @@ COMMIT;
 			KeyFields: &FieldSetDescription{
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -578,7 +578,7 @@ COMMIT;
 					strings.Repeat("j", 9001),
 				),
 				TypeOids: tenk1FieldTypeOids,
-				NullBitmap: createNullBitmap(options,2,13,1),
+				Nulls: createNulls(options,2,13,1),
 			},
 		},
 	)
@@ -589,13 +589,13 @@ COMMIT;
 				Names: tenk1FieldNames[:15],
 				Values: createStringValues(15, "1", "20"),
 				TypeOids: tenk1FieldTypeOids[:15],
-				NullBitmap: createNullBitmap(options,2,13),
+				Nulls: createNulls(options,2,13),
 			},
 			KeyFields: &FieldSetDescription{
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
 				TypeOids: tenk1FieldTypeOids[:1],
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -606,7 +606,7 @@ COMMIT;
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
 				TypeOids: tenk1FieldTypeOids[:1],
-				NullBitmap: createNullBitmap(options,1),
+				Nulls: createNulls(options,1),
 			},
 		},
 	)
@@ -634,7 +634,7 @@ INSERT INTO tenk1(unique1) VALUES (1);
 			NewValues: &FieldSetDescription{
 				Names: tenk1FieldNames,
 				Values: createStringValues(16, "\x00\x00\x00\x01"),
-				NullBitmap: createNullBitmap(options,1,15),
+				Nulls: createNulls(options,1,15),
 			},
 		},
 	)
@@ -666,7 +666,7 @@ INSERT INTO tenk1(unique1, string4) VALUES (2, 'foobarbaz');
 					"", "", "", "",
 					"", "", "", "foobarbaz",
 				),
-				NullBitmap: createNullBitmap(options,1,14,1),
+				Nulls: createNulls(options,1,14,1),
 			},
 		},
 	)
@@ -694,7 +694,7 @@ func TestLargeEmbeddedMessage(t *testing.T) {
 					"", "",
 					strings.Repeat("j", 16384),
 				),
-				NullBitmap: createNullBitmap(options,1,14,1),
+				Nulls: createNulls(options,1,14,1),
 			},
 		},
 	)
