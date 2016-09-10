@@ -74,15 +74,15 @@ static void pb3ld_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 static void pb3ld_fds_init(const PB3LD_Private *privdata,
 						   PB3LD_FieldSetDescription *fds,
 						   Relation relation);
+static void pb3ld_fds_reset(PB3LD_FieldSetDescription *fds);
 static void pb3ld_fds_append_null(PB3LD_FieldSetDescription *fds, bool isnull);
 static void pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out);
 static void pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, bool isnull, int format);
 static void pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out);
 static bool pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid);
-static void pb3ld_write_FieldSetDescription(const PB3LD_Private *privdata,
+static void pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 											const int reserved_len,
 											StringInfo out,
-											Relation relation,
 											ReorderBufferTupleBuf *tuple,
 											Oid rd_replidindex);
 static void pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
@@ -403,6 +403,14 @@ pb3ld_fds_init(const PB3LD_Private *privdata, PB3LD_FieldSetDescription *fds, Re
 }
 
 static void
+pb3ld_fds_reset(PB3LD_FieldSetDescription *fds)
+{
+	fds->nulls.len = 0;
+	if (fds->privdata->formats_mode != PB3LD_FSD_FORMATS_DISABLED)
+		fds->formats.len = 0;
+}
+
+static void
 pb3ld_fds_append_null(PB3LD_FieldSetDescription *fds, bool isnull)
 {
 	if (isnull)
@@ -492,9 +500,11 @@ pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid)
 
 /*
  * pb3ld_write_FieldSetDescription writes out a FieldSetDescription into the
- * output buffer "out".  The caller should have written the preceding varlen key
- * already.  If rd_replidindex is a valid oid, the index with that oid is looked
- * up, and only the attributes that are part of that index are written out.
+ * output buffer "out".  The caller should have written the preceding varlen
+ * key already.  "fds" should point to an initialized
+ * PB3LD_FieldSetDescription, and must be reset before reuse.  If
+ * rd_replidindex is a valid oid, the index with that oid is looked up, and
+ * only the attributes that are part of that index are written out.
  *
  * A FieldSetDescription is an embedded message, so we must precede it with a
  * variable encoded length.  However, since we can't easily know the length of
@@ -507,26 +517,22 @@ pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid)
  * most of the time we can fit everything in fewer than 128 bytes.
  */
 static void
-pb3ld_write_FieldSetDescription(const PB3LD_Private *privdata,
+pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 								const int reserved_len,
 								StringInfo out,
-								Relation relation,
 								ReorderBufferTupleBuf *tuple,
 								Oid rd_replidindex)
 {
-	PB3LD_FieldSetDescription fds;
 	TupleDesc tupdesc;
 	HeapTuple htup;
 	int natt;
 	int reserved_start;
 
-	pb3ld_fds_init(privdata, &fds, relation);
-
 	reserved_start = out->len;
 	appendStringInfoSpaces(out, reserved_len);
 
 	htup = &tuple->tuple;
-	tupdesc = RelationGetDescr(relation);
+	tupdesc = RelationGetDescr(fds->relation);
 
 	if (OidIsValid(rd_replidindex))
 	{
@@ -548,7 +554,7 @@ pb3ld_write_FieldSetDescription(const PB3LD_Private *privdata,
 
 			typid = attr->atttypid;
 			valdatum = heap_getattr(htup, relattr, tupdesc, &isnull);
-			pb3ld_fds_attribute(privdata, &fds, out, NameStr(attr->attname),
+			pb3ld_fds_attribute(fds->privdata, fds, out, NameStr(attr->attname),
 								typid, valdatum, isnull, EXTERNAL_ONDISK_NOTOK);
 		}
 		index_close(indexrel, NoLock);
@@ -569,13 +575,13 @@ pb3ld_write_FieldSetDescription(const PB3LD_Private *privdata,
 
 			typid = attr->atttypid;
 			valdatum = heap_getattr(htup, natt + 1, tupdesc, &isnull);
-			pb3ld_fds_attribute(privdata, &fds, out, NameStr(attr->attname),
+			pb3ld_fds_attribute(fds->privdata, fds, out, NameStr(attr->attname),
 								typid, valdatum, isnull, EXTERNAL_ONDISK_OK);
 		}
 	}
 
-	pb3ld_fds_write_nulls(&fds, out);
-	pb3ld_fds_write_formats(&fds, out);
+	pb3ld_fds_write_nulls(fds, out);
+	pb3ld_fds_write_formats(fds, out);
 
 	pb3_fix_reserved_length(out, reserved_start, reserved_len);
 }
@@ -587,6 +593,7 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	PB3LD_Private *privdata = ctx->output_plugin_private;
 	char relreplident = relation->rd_rel->relreplident;
 	Oid rd_replidindex = InvalidOid;
+	PB3LD_FieldSetDescription fds;
 	MemoryContext old;
 
 	if (relreplident == REPLICA_IDENTITY_NOTHING)
@@ -634,8 +641,11 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			pb3ld_write_TableDescription(privdata, ctx->out, relation);
 
 			Assert(change->data.tp.newtuple != NULL);
+
+			pb3ld_fds_init(privdata, &fds, relation);
+
 			pb3_append_varlen_key(ctx->out, PB3LD_INS_NEW_VALUES);
-			pb3ld_write_FieldSetDescription(privdata, 2, ctx->out, relation, change->data.tp.newtuple, InvalidOid);
+			pb3ld_write_FieldSetDescription(&fds, 2, ctx->out, change->data.tp.newtuple, InvalidOid);
 
 			if (change->data.tp.oldtuple != NULL)
 				elog(ERROR, "oldtuple is not NULL in INSERT");
@@ -647,8 +657,11 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			pb3ld_write_TableDescription(privdata, ctx->out, relation);
 
 			Assert(change->data.tp.newtuple != NULL);
+
+			pb3ld_fds_init(privdata, &fds, relation);
+
 			pb3_append_varlen_key(ctx->out, PB3LD_UPD_NEW_VALUES);
-			pb3ld_write_FieldSetDescription(privdata, 2, ctx->out, relation, change->data.tp.newtuple, InvalidOid);
+			pb3ld_write_FieldSetDescription(&fds, 2, ctx->out, change->data.tp.newtuple, InvalidOid);
 
 			if (change->data.tp.oldtuple != NULL || OidIsValid(rd_replidindex))
 			{
@@ -659,8 +672,10 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				else
 					keytuple = change->data.tp.newtuple;
 
+				pb3ld_fds_reset(&fds);
+
 				pb3_append_varlen_key(ctx->out, PB3LD_UPD_KEY_FIELDS);
-				pb3ld_write_FieldSetDescription(privdata, 2, ctx->out, relation, keytuple, rd_replidindex);
+				pb3ld_write_FieldSetDescription(&fds, 2, ctx->out, keytuple, rd_replidindex);
 			}
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
@@ -674,8 +689,10 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 			if (change->data.tp.oldtuple != NULL)
 			{
+				pb3ld_fds_init(privdata, &fds, relation);
+
 				pb3_append_varlen_key(ctx->out, PB3LD_DEL_KEY_FIELDS);
-				pb3ld_write_FieldSetDescription(privdata, 1, ctx->out, relation, change->data.tp.oldtuple, rd_replidindex);
+				pb3ld_write_FieldSetDescription(&fds, 1, ctx->out, change->data.tp.oldtuple, rd_replidindex);
 			}
 			break;
 		default:
