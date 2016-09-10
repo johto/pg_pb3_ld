@@ -80,6 +80,9 @@ static void pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out
 static void pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, bool isnull, int format);
 static void pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out);
 static bool pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid);
+static void pb3ld_write_TableDescription(const PB3LD_Private *privdata,
+										 StringInfo out,
+										 Relation relation);
 static void pb3ld_fds_attribute(PB3LD_FieldSetDescription *fds,
 								StringInfo s,
 								const char *attname,
