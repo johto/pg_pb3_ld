@@ -521,7 +521,10 @@ DELETE FROM tenk1;
 COMMIT;
 `
 
-	options := []string{"type_oids_mode","full"}
+	options := []string{
+		"type_oids_mode","full",
+		"formats_mode","full",
+	}
 
 	var expected []interface{}
 	expected = append(expected,
@@ -538,6 +541,7 @@ COMMIT;
 				),
 				TypeOids: tenk1FieldTypeOids,
 				Nulls: createNulls(options,2,13,1),
+				Formats: createFormats(options, 16),
 			},
 		},
 	)
@@ -549,12 +553,14 @@ COMMIT;
 				Values: createStringValues(15, "1", "20"),
 				TypeOids: tenk1FieldTypeOids[:15],
 				Nulls: createNulls(options,2,13),
+				Formats: createFormats(options, 15),
 			},
 			KeyFields: &FieldSetDescription{
 				Names: []string{"unique1"},
 				Values: createStringValues(1, "1"),
 				TypeOids: tenk1FieldTypeOids[:1],
 				Nulls: createNulls(options,1),
+				Formats: createFormats(options, 1),
 			},
 		},
 	)
@@ -566,6 +572,7 @@ COMMIT;
 				Values: createStringValues(1, "1"),
 				TypeOids: tenk1FieldTypeOids[:1],
 				Nulls: createNulls(options,1),
+				Formats: createFormats(options, 1),
 			},
 		},
 	)
