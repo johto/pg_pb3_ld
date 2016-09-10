@@ -25,16 +25,16 @@
 
 /* InsertDescription */
 #define PB3LD_INS_TABLE_DESC	1
-#define PB3LD_INS_NEW_VALUES	2
+#define PB3LD_INS_NEW_VALUES	3
 
 /* UpdateDescription */
 #define PB3LD_UPD_TABLE_DESC	1
-#define PB3LD_UPD_KEY_FIELDS	2
-#define PB3LD_UPD_NEW_VALUES	3
+#define PB3LD_UPD_KEY_FIELDS	3
+#define PB3LD_UPD_NEW_VALUES	4
 
 /* DeleteDescription */
 #define PB3LD_DEL_TABLE_DESC	1
-#define PB3LD_DEL_KEY_FIELDS	2
+#define PB3LD_DEL_KEY_FIELDS	3
 
 /* FieldSetDescription */
 #define PB3LD_FSD_NAMES			2

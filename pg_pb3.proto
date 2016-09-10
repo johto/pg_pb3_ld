@@ -21,18 +21,18 @@ message CommitTransaction {
 
 message InsertDescription {
     TableDescription table = 1;
-    FieldSetDescription new_values = 2;
+    FieldSetDescription new_values = 3;
 }
 
 message UpdateDescription {
     TableDescription table = 1;
-    FieldSetDescription key_fields = 2;
-    FieldSetDescription new_values = 3;
+    FieldSetDescription key_fields = 3;
+    FieldSetDescription new_values = 4;
 }
 
 message DeleteDescription {
     TableDescription table = 1;
-    FieldSetDescription key_fields = 2;
+    FieldSetDescription key_fields = 3;
 }
 
 message TableDescription {
