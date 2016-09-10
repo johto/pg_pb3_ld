@@ -27,7 +27,7 @@ message InsertDescription {
 message UpdateDescription {
     TableDescription table = 1;
     FieldSetDescription key_fields = 3;
-    FieldSetDescription new_values = 4;
+    FieldSetDescription new_values = 5;
 }
 
 message DeleteDescription {
