@@ -80,6 +80,13 @@ static void pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out
 static void pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, bool isnull, int format);
 static void pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out);
 static bool pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid);
+static void pb3ld_fds_attribute(PB3LD_FieldSetDescription *fds,
+								StringInfo s,
+								const char *attname,
+								Oid typid,
+								Datum valdatum,
+								bool isnull,
+								bool external_ondisk_ok);
 static void pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 											const int reserved_len,
 											StringInfo out,
@@ -298,8 +305,7 @@ pb3ld_write_TableDescription(const PB3LD_Private *privdata, StringInfo out, Rela
 }
 
 static void
-pb3ld_fds_attribute(const PB3LD_Private *privdata,
-					PB3LD_FieldSetDescription *fds,
+pb3ld_fds_attribute(PB3LD_FieldSetDescription *fds,
 					StringInfo s,
 					const char *attname,
 					Oid typid,
@@ -373,7 +379,7 @@ pb3ld_fds_attribute(const PB3LD_Private *privdata,
 
 	pb3_append_string_kv(s, PB3LD_FSD_NAMES, attname);
 
-	switch (privdata->type_oids_mode)
+	switch (fds->privdata->type_oids_mode)
 	{
 		case PB3LD_FSD_TYPE_OIDS_DISABLED:
 			break;
@@ -554,7 +560,7 @@ pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 
 			typid = attr->atttypid;
 			valdatum = heap_getattr(htup, relattr, tupdesc, &isnull);
-			pb3ld_fds_attribute(fds->privdata, fds, out, NameStr(attr->attname),
+			pb3ld_fds_attribute(fds, out, NameStr(attr->attname),
 								typid, valdatum, isnull, EXTERNAL_ONDISK_NOTOK);
 		}
 		index_close(indexrel, NoLock);
@@ -575,7 +581,7 @@ pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 
 			typid = attr->atttypid;
 			valdatum = heap_getattr(htup, natt + 1, tupdesc, &isnull);
-			pb3ld_fds_attribute(fds->privdata, fds, out, NameStr(attr->attname),
+			pb3ld_fds_attribute(fds, out, NameStr(attr->attname),
 								typid, valdatum, isnull, EXTERNAL_ONDISK_OK);
 		}
 	}
