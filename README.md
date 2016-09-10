@@ -78,14 +78,16 @@ Examples:
 
 Controls how the `formats` field in *FieldSetDescription* messages is written.
 
-There are three supported modes:
+There are four supported modes:
 
   1. In `disabled` mode the `formats` protocol fields are never present.
   2. In `libpq` mode the `formats` fields contain one byte per field in the
   set.  A zero byte ('\x00') means the value is in text format, and a one
   ('\x01') means the value is in binary.  As a special case, if this field is
   omitted, all values are in text format.
-  3. The `full` mode works exactly the same way as `libpq` mode, except the
+  3. In `omit_nulls` mode the `formats` protocol fields only contain entries for
+  non-NULL values.
+  4. The `full` mode works exactly the same way as the `libpq` mode, except the
   field is never omitted.
 
 The default is *disabled*.

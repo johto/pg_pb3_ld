@@ -76,7 +76,7 @@ static void pb3ld_fds_init(const PB3LD_Private *privdata,
 						   Relation relation);
 static void pb3ld_fds_append_null(PB3LD_FieldSetDescription *fds, bool isnull);
 static void pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out);
-static void pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, int format);
+static void pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, bool isnull, int format);
 static void pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out);
 static bool pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid);
 static void pb3ld_write_FieldSetDescription(const PB3LD_Private *privdata,
@@ -205,6 +205,8 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 				privdata->formats_mode = PB3LD_FSD_FORMATS_DISABLED;
 			else if (strcmp(mode, "libpq") == 0)
 				privdata->formats_mode = PB3LD_FSD_FORMATS_LIBPQ;
+			else if (strcmp(mode, "omit_nulls") == 0)
+				privdata->formats_mode = PB3LD_FSD_FORMATS_OMIT_NULLS;
 			else if (strcmp(mode, "full") == 0)
 				privdata->formats_mode = PB3LD_FSD_FORMATS_FULL;
 			else
@@ -309,7 +311,7 @@ pb3ld_fds_attribute(const PB3LD_Private *privdata,
 	{
 		pb3ld_fds_append_null(fds, true);
 		/* don't care about the format */
-		pb3ld_fds_append_format(fds, 0);
+		pb3ld_fds_append_format(fds, true, 0);
 		pb3_append_bytes_kv(s, PB3LD_FSD_VALUES, NULL, 0);
 	}
 	else
@@ -354,14 +356,14 @@ pb3ld_fds_attribute(const PB3LD_Private *privdata,
 
 		if (binary_output)
 		{
-			pb3ld_fds_append_format(fds, 1);
+			pb3ld_fds_append_format(fds, false, 1);
 			bytea *val = OidSendFunctionCall(typoutput, valdatum);
 			valuedata = VARDATA(val);
 			valuelen = VARSIZE(val) - VARHDRSZ;
 		}
 		else
 		{
-			pb3ld_fds_append_format(fds, 0);
+			pb3ld_fds_append_format(fds, false, 0);
 			valuedata = OidOutputFunctionCall(typoutput, valdatum);
 			valuelen = strlen(valuedata);
 		}
@@ -416,12 +418,16 @@ pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out)
 }
 
 static void
-pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, int format)
+pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, bool isnull, int format)
 {
 	switch (fds->privdata->formats_mode)
 	{
 		case PB3LD_FSD_FORMATS_DISABLED:
 			return;
+		case PB3LD_FSD_FORMATS_OMIT_NULLS:
+			if (!isnull)
+				appendStringInfoChar(&fds->formats, format);
+			break;
 		case PB3LD_FSD_FORMATS_LIBPQ:
 			/* fallthrough; handled in pb3ld_fds_write_formats */
 		case PB3LD_FSD_FORMATS_FULL:
@@ -455,6 +461,8 @@ pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out)
 			}
 			pb3_append_bytes_kv(out, PB3LD_FSD_FORMATS, fds->formats.data, fds->formats.len);
 			break;
+		case PB3LD_FSD_FORMATS_OMIT_NULLS:
+			/* fallthrough; handled in pb3ld_fds_attribute */
 		case PB3LD_FSD_FORMATS_FULL:
 			pb3_append_bytes_kv(out, PB3LD_FSD_FORMATS, fds->formats.data, fds->formats.len);
 			break;
