@@ -28,7 +28,11 @@ SELECT * FROM pg_create_logical_replication_slot('my_application', 'pg_pb3_ld');
 
 and connect to it.  The replication level `START_REPLICATION` command can
 specify a list of options which control various details of the decoding output.
-The options supported by the plugin are:
+For detailed descriptions of the available options, see the "Options" section
+below.
+
+Options
+-------
 
 ##### enable\_begin\_messages (*bool*)
 
