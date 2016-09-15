@@ -1,4 +1,12 @@
 *.swp
+/cpp_consumer/CMakeFiles/
+/cpp_consumer/CMakeCache.txt
+/cpp_consumer/cmake_install.cmake
+/cpp_consumer/Makefile
+/cpp_consumer/pg_pb3.proto
+/cpp_consumer/pg_pb3.pb.cc
+/cpp_consumer/pg_pb3.pb.h
+/cpp_consumer/cpp_consumer
 /decoder/.deps/*
 /decoder/pg_pb3_ld.o
 /decoder/pg_pb3_ld.so
