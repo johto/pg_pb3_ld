@@ -365,8 +365,10 @@ pb3ld_fds_attribute(PB3LD_FieldSetDescription *fds,
 
 		if (binary_output)
 		{
+			bytea *val;
+
 			pb3ld_fds_append_format(fds, false, 1);
-			bytea *val = OidSendFunctionCall(typoutput, valdatum);
+			val = OidSendFunctionCall(typoutput, valdatum);
 			valuedata = VARDATA(val);
 			valuelen = VARSIZE(val) - VARHDRSZ;
 		}
