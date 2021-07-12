@@ -1,17 +1,16 @@
 syntax = "proto3";
 
 enum WireMessageType {
-    WMSG_BEGIN      = 0;
-    WMSG_COMMIT     = 1;
-    WMSG_INSERT     = 2;
-    WMSG_UPDATE     = 3;
-    WMSG_DELETE     = 4;
+    WMSG_BEGIN = 0;
+    WMSG_COMMIT = 1;
+    WMSG_INSERT = 2;
+    WMSG_UPDATE = 3;
+    WMSG_DELETE = 4;
 }
 
 message WireMessageHeader {
     WireMessageType typ = 1;
 }
-
 
 message BeginTransaction {
 }
