@@ -83,13 +83,13 @@ static bool pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typi
 static void pb3ld_write_TableDescription(const PB3LD_Private *privdata,
 										 StringInfo out,
 										 Relation relation);
-static void pb3ld_fds_attribute(PB3LD_FieldSetDescription *fds,
-								StringInfo s,
-								const char *attname,
-								Oid typid,
-								Datum valdatum,
-								bool isnull,
-								bool external_ondisk_ok);
+static void pb3ld_write_field_set_attribute(PB3LD_FieldSetDescription *fds,
+											StringInfo s,
+											const char *attname,
+											Oid typid,
+											Datum valdatum,
+											bool isnull,
+											bool external_ondisk_ok);
 static void pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 											const int reserved_len,
 											StringInfo out,
@@ -308,13 +308,13 @@ pb3ld_write_TableDescription(const PB3LD_Private *privdata, StringInfo out, Rela
 }
 
 static void
-pb3ld_fds_attribute(PB3LD_FieldSetDescription *fds,
-					StringInfo s,
-					const char *attname,
-					Oid typid,
-					Datum valdatum,
-					bool isnull,
-					bool external_ondisk_ok)
+pb3ld_write_field_set_attribute(PB3LD_FieldSetDescription *fds,
+								StringInfo s,
+								const char *attname,
+								Oid typid,
+								Datum valdatum,
+								bool isnull,
+								bool external_ondisk_ok)
 {
 	if (isnull)
 	{
@@ -565,8 +565,8 @@ pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 
 			typid = attr->atttypid;
 			valdatum = heap_getattr(htup, relattr, tupdesc, &isnull);
-			pb3ld_fds_attribute(fds, out, NameStr(attr->attname),
-								typid, valdatum, isnull, EXTERNAL_ONDISK_NOTOK);
+			pb3ld_write_field_set_attribute(fds, out, NameStr(attr->attname),
+											typid, valdatum, isnull, EXTERNAL_ONDISK_NOTOK);
 		}
 		index_close(indexrel, NoLock);
 	}
@@ -586,8 +586,8 @@ pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
 
 			typid = attr->atttypid;
 			valdatum = heap_getattr(htup, natt + 1, tupdesc, &isnull);
-			pb3ld_fds_attribute(fds, out, NameStr(attr->attname),
-								typid, valdatum, isnull, EXTERNAL_ONDISK_OK);
+			pb3ld_write_field_set_attribute(fds, out, NameStr(attr->attname),
+											typid, valdatum, isnull, EXTERNAL_ONDISK_OK);
 		}
 	}
 
