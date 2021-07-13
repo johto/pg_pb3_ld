@@ -50,8 +50,10 @@ pb3ld_parse_binary_oid_ranges(PB3LD_Private *privdata, const char *input)
 			(void) scanint8(nextp, false, &bigint);
 			if (bigint < 0)
 				elog(ERROR, "oids can't be negative");
+			else if (bigint == 0)
+				elog(ERROR, "oid can't be InvalidOid (0)");
 			else if (bigint > OID_MAX)
-				elog(ERROR, "oids can't be more than %u", OID_MAX);
+				elog(ERROR, "oids can't be larger than OID_MAX (%u)", OID_MAX);
 			ranges[num_ranges * 2 + i] = (Oid) bigint;
 
 			if (end != NULL)
