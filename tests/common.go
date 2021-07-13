@@ -1,8 +1,8 @@
 package test
 
 import (
-	"database/sql"
-	"github.com/lib/pq"
+	"context"
+	"github.com/jackc/pgx/v4"
 	proto "github.com/golang/protobuf/proto"
 	"reflect"
 	"strings"
@@ -30,36 +30,29 @@ var tblIdentityFullDescription = &TableDescription{
 	TableName: "tbl_identity_full",
 }
 
-func testSetup(t *testing.T) *sql.DB {
+func testSetup(t *testing.T) *pgx.Conn {
 	conninfo := strings.Join([]string{
 		"sslmode=disable",
 		// required for predictability
 		"synchronous_commit=on",
 	}, " ")
 
-	dbh, err := sql.Open("postgres", conninfo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = dbh.Ping()
+	dbh, err := pgx.Connect(context.Background(), conninfo)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var isSuperUser string
-	err = dbh.QueryRow("SHOW is_superuser").Scan(&isSuperUser)
+	err = dbh.QueryRow(context.Background(), "SHOW is_superuser").Scan(&isSuperUser)
 	if err != nil {
-		_ = dbh.Close()
+		_ = dbh.Close(context.Background())
 		t.Fatal(err)
 	}
 	if isSuperUser != "on" {
-		_ = dbh.Close()
+		_ = dbh.Close(context.Background())
 		t.Fatalf("not a superuser (got %q; expected \"on\")", isSuperUser)
 	}
 
-	dbh.SetMaxIdleConns(1)
-	dbh.SetMaxOpenConns(1)
-
-	_, err = dbh.Exec(`
+	_, err = dbh.Exec(context.Background(), `
 DROP TABLE IF EXISTS tenk1;
 CREATE TABLE tenk1 (
     unique1     int4,
@@ -95,28 +88,20 @@ CREATE TABLE tbl_identity_full (
 ALTER TABLE tbl_identity_full REPLICA IDENTITY FULL;
 `)
 	if err != nil {
-		_ = dbh.Close()
+		_ = dbh.Close(context.Background())
 		t.Fatal(err)
 	}
 
-	_, err = dbh.Exec(`SELECT pg_create_logical_replication_slot($1, $2)`, replicationSlotName, outputPluginName)
+	_, err = dbh.Exec(context.Background(), `SELECT pg_create_logical_replication_slot($1, $2)`, replicationSlotName, outputPluginName)
 	if err != nil {
-		pge, ok := err.(*pq.Error)
-		if !ok {
-			_ = dbh.Close()
+		_, err = dbh.Exec(context.Background(), "SELECT pg_drop_replication_slot($1)", replicationSlotName)
+		if err != nil {
+			_ = dbh.Close(context.Background())
 			t.Fatal(err)
 		}
-		if pge.Code.Name() != "duplicate_object" {
-			t.Fatal(pge)
-		}
-		_, err = dbh.Exec("SELECT pg_drop_replication_slot($1)", replicationSlotName)
+		_, err = dbh.Exec(context.Background(), `SELECT pg_create_logical_replication_slot($1, $2)`, replicationSlotName, outputPluginName)
 		if err != nil {
-			_ = dbh.Close()
-			t.Fatal(err)
-		}
-		_, err = dbh.Exec(`SELECT pg_create_logical_replication_slot($1, $2)`, replicationSlotName, outputPluginName)
-		if err != nil {
-			_ = dbh.Close()
+			_ = dbh.Close(context.Background())
 			t.Fatal(err)
 		}
 	}
@@ -169,24 +154,24 @@ func createFormats(options []string, vals ...int) []byte {
 }
 
 
-func testTeardown(t *testing.T, dbh *sql.DB) {
-	_, _ = dbh.Exec("SELECT pg_drop_replication_slot($1)", replicationSlotName)
-	_ = dbh.Close()
+func testTeardown(t *testing.T, dbh *pgx.Conn) {
+	_, _ = dbh.Exec(context.Background(), "SELECT pg_drop_replication_slot($1)", replicationSlotName)
+	_ = dbh.Close(context.Background())
 }
 
-func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMessages []interface{}) {
+func runTest(t *testing.T, dbh *pgx.Conn, sql string, options []string, expectedMessages []interface{}) {
 	if options == nil {
 		options = []string{}
 	}
 
-	_, err := dbh.Exec(sql)
+	_, err := dbh.Exec(context.Background(), sql)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	rows, err := dbh.Query(`SELECT data FROM pg_logical_slot_get_binary_changes($1, NULL, NULL, VARIADIC $2)`,
+	rows, err := dbh.Query(context.Background(), `SELECT data FROM pg_logical_slot_get_binary_changes($1, NULL, NULL, VARIADIC $2)`,
 		replicationSlotName,
-		pq.Array(options),
+		options,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +254,7 @@ func runTest(t *testing.T, dbh *sql.DB, sql string, options []string, expectedMe
 		}
 
 		if !reflect.DeepEqual(msg, expectedMessages[0]) {
-			t.Logf("message number %d does not match: %T:%+v != %T:%+v",
+			t.Logf("message number %d does not match:\n    %T:%+v\n\n  is not equal to\n\n    %T:%+v",
 					 messageNum, msg, msg, expectedMessages[0], expectedMessages[0])
 			t.Logf("received message was: %s", receivedTextFormat)
 			t.FailNow()

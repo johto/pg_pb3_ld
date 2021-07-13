@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"os"
@@ -170,7 +171,7 @@ func TestTableOids(t *testing.T) {
 	defer testTeardown(t, dbh)
 
 	tdCopy := *tenk1TableDescriptionNoOid
-	err := dbh.QueryRow(`SELECT 'tenk1'::regclass::oid`).Scan(&tdCopy.TableOid)
+	err := dbh.QueryRow(context.Background(), `SELECT 'tenk1'::regclass::oid`).Scan(&tdCopy.TableOid)
 	if err != nil {
 		t.Fatal(err)
 	}
