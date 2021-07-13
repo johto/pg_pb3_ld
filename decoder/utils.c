@@ -6,77 +6,151 @@
 
 #include "pg_pb3_ld.h"
 
+
+static Oid
+pb3ld_parse_binary_oid_value(const char *value)
+{
+	int64 bigint;
+
+	(void) scanint8(value, false, &bigint);
+	if (bigint < 0)
+		elog(ERROR, "oids can't be negative");
+	else if (bigint == 0)
+		elog(ERROR, "oid can't be InvalidOid (0)");
+	else if (bigint > OID_MAX)
+		elog(ERROR, "oids can't be larger than OID_MAX (%u)", OID_MAX);
+	return (Oid) bigint;
+}
+
+static void
+pb3ld_range_parse_error_callback(void *arg)
+{
+	errcontext("while parsing binary_oid_ranges range \"%s\"", (const char *) arg);
+}
+
+static void
+pb3ld_parse_binary_oid_range(char *value, PB3LD_Oid_Range *range)
+{
+	ErrorContextCallback sqlerrcontext;
+	char *hyphen;
+
+	sqlerrcontext.callback = pb3ld_range_parse_error_callback;
+	sqlerrcontext.arg = (void *) value;
+	sqlerrcontext.previous = error_context_stack;
+	error_context_stack = &sqlerrcontext;
+
+	hyphen = strchr(value, '-');
+	if (hyphen != NULL)
+	{
+		const char *unaltered = (const char *) pstrdup(value);
+
+		sqlerrcontext.arg = (void *) unaltered;
+
+		*hyphen = '\0';
+
+		range->min = pb3ld_parse_binary_oid_value(value);
+		range->max = pb3ld_parse_binary_oid_value(hyphen + 1);
+		if (range->max < range->min)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("the upper bound of a range can't be lower than its lower bound in binary_oid_ranges")));
+	}
+	else
+	{
+		range->min = pb3ld_parse_binary_oid_value(value);
+		range->max = range->min;
+	}
+
+	error_context_stack = sqlerrcontext.previous;
+}
+
 /*
  * pb3ld_parse_binary_oid_ranges parses a comma-separated list of oid ranges
  * into privdata->binary_oid_ranges.  privdata->num_binary_oid_ranges is set to
  * the number of ranges parsed.  An exception is raised on invalid input.
- *
- * XXX This code sucks.  Please fix.
  */
-void
-pb3ld_parse_binary_oid_ranges(PB3LD_Private *privdata, const char *input)
+PB3LD_Oid_Range *
+pb3ld_parse_binary_oid_ranges(const char *input)
 {
-	int num_ranges = 0;
-	int num_alloc = 512;
-	Oid *ranges = (Oid *) palloc(sizeof(Oid) * 2 * num_alloc);
-	char *nextp = pstrdup(input);
+	int num_alloc;
+	const char *nextp;
+	PB3LD_Oid_Range *ranges;
 
-	while (isspace((unsigned char) *nextp))
+	while (isspace((unsigned char) *input))
+		input++;
+
+	if (*input == '\0')
+		return NULL;
+
+	num_alloc = 1;
+	nextp = input;
+	for (;;) {
+		nextp = strchr(nextp, ',');
+		if (nextp == NULL)
+			break;
+
+		num_alloc++;
+
 		nextp++;
+		while (isspace((unsigned char) *nextp))
+			nextp++;
 
-	if (*nextp == '\0')
-	{
-		privdata->binary_oid_ranges = NULL;
-		privdata->num_binary_oid_ranges = 0;
+		if (*nextp == '\0')
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid input syntax for binary_oid_ranges")));
 	}
 
-	for (;;)
+	ranges = (PB3LD_Oid_Range *) palloc(sizeof(PB3LD_Oid_Range) * num_alloc + 1);
+	ranges[num_alloc].min = InvalidOid;
+	ranges[num_alloc].max = InvalidOid;
+
+	nextp = input;
+	for (int rangeno = 0; ; rangeno++)
 	{
-		int i;
+		const char *end;
+		char *value;
 
-		for (i = 0; i < 2; i++)
+		if (rangeno >= num_alloc)
+			elog(ERROR, "internal error: rangeno %d >= num_alloc %d", rangeno, num_alloc);
+
+		end = strchr(nextp, ',');
+		if (end == NULL)
 		{
-			char *end;
-			int64 bigint;
+			if (rangeno != num_alloc - 1)
+				elog(ERROR, "internal error: rangeno %d != num_alloc - 1 %d", rangeno, num_alloc - 1);
 
-			end = strpbrk(nextp, ",-");
-			if (end != NULL)
-			{
-				if (i == 1 && *end == '-')
-					elog(ERROR, "syntax error");
-				*end = '\0';
-			}
+			value = pstrdup(nextp);
+		}
+		else
+		{
+			Size len = (Size) (end - nextp);
+			if (len == 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid input syntax for binary_oid_ranges")));
 
-			(void) scanint8(nextp, false, &bigint);
-			if (bigint < 0)
-				elog(ERROR, "oids can't be negative");
-			else if (bigint == 0)
-				elog(ERROR, "oid can't be InvalidOid (0)");
-			else if (bigint > OID_MAX)
-				elog(ERROR, "oids can't be larger than OID_MAX (%u)", OID_MAX);
-			ranges[num_ranges * 2 + i] = (Oid) bigint;
-
-			if (end != NULL)
-				nextp = end + 1;
-			else
-			{
-				if (i == 0)
-					ranges[num_ranges * 2 + 1] = ranges[num_ranges * 2];
-
-				num_ranges++;
-				goto out;
-			}
+			value = pnstrdup(nextp, len);
 		}
 
-		num_ranges++;
-		if (num_ranges >= num_alloc)
-			elog(ERROR, "fixme");
+		pb3ld_parse_binary_oid_range(value, ranges + rangeno);
+		if (rangeno > 0)
+		{
+			const PB3LD_Oid_Range previous = ranges[rangeno - 1];
+			const PB3LD_Oid_Range current = ranges[rangeno];
+
+			if (previous.max >= current.min)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("binary_oid_ranges range %u - %u overlaps with range %u - %u",
+								previous.min, previous.max,
+								current.min, current.max)));
+		}
+
+		if (end == NULL)
+			break;
+		nextp = end + 1;
 	}
 
-out:
-	/* TODO: sanity check the ranges */
-
-	privdata->binary_oid_ranges = ranges;
-	privdata->num_binary_oid_ranges = num_ranges;
+	return ranges;
 }
-

@@ -142,7 +142,6 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 
 	privdata->type_oids_mode = PB3LD_FSD_TYPE_OIDS_DISABLED;
 	privdata->binary_oid_ranges = NULL;
-	privdata->num_binary_oid_ranges = 0;
 	privdata->formats_mode = PB3LD_FSD_FORMATS_DISABLED;
 
 	privdata->table_oids_enabled = false;
@@ -200,7 +199,7 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("binary_oid_ranges requires an argument")));
-			pb3ld_parse_binary_oid_ranges(privdata, strVal(elem->arg));
+			privdata->binary_oid_ranges = pb3ld_parse_binary_oid_ranges(strVal(elem->arg));
 		}
 		else if (strcmp(elem->defname, "formats_mode") == 0)
 		{
@@ -493,18 +492,17 @@ pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out)
 static bool
 pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid)
 {
-	Oid *r = fds->privdata->binary_oid_ranges;
-	int i;
-
+	PB3LD_Oid_Range *r = fds->privdata->binary_oid_ranges;
 	if (r == NULL)
 		return false;
 
-	for (i = 0; i < fds->privdata->num_binary_oid_ranges; ++i)
+	while (r->min != InvalidOid)
 	{
-		if (typid < r[i*2])
+		if (typid < r->min)
 			return false;
-		else if (typid >= r[i*2] && typid <= r[i*2+1])
+		else if (typid <= r->max)
 			return true;
+		r++;
 	}
 	return false;
 }

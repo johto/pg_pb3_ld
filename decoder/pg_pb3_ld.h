@@ -5,6 +5,15 @@
 
 #include "lib/stringinfo.h"
 
+/* utils.c */
+
+typedef struct {
+	Oid min;
+	Oid max;
+} PB3LD_Oid_Range;
+
+extern PB3LD_Oid_Range *pb3ld_parse_binary_oid_ranges(const char *input);
+
 /* pg_pb3_ld.c */
 
 typedef enum {
@@ -32,8 +41,7 @@ typedef struct
 	bool	repl_identity_required;
 
 	bool	type_oids_mode;
-	Oid	   *binary_oid_ranges;
-	int		num_binary_oid_ranges;
+	PB3LD_Oid_Range *binary_oid_ranges;
 	PB3LD_FSD_Formats_Mode formats_mode;
 
 	bool	table_oids_enabled;
@@ -59,10 +67,5 @@ extern void pb3_append_bytes_kv(StringInfo s, int32 field_number, const char *by
 extern void pb3_append_varlen_key(StringInfo s, int32 field_number);
 
 extern void pb3_fix_reserved_length(StringInfo s, int reserved_start, int reserved_len);
-
-/* utils.c */
-
-extern void
-pb3ld_parse_binary_oid_ranges(PB3LD_Private *privdata, const char *input);
 
 #endif
