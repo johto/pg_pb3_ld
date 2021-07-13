@@ -1,6 +1,7 @@
 package test
 
 import (
+	proto "github.com/golang/protobuf/proto"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ INSERT INTO tenk1(unique1) VALUES (1);
 		"formats_mode","libpq",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -46,7 +47,7 @@ INSERT INTO tenk1(unique1) VALUES (1);
 		"formats_mode","libpq",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -75,7 +76,7 @@ INSERT INTO tbl_identity_full(f1,f2) VALUES (1,'2');
 		"formats_mode","libpq",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tblIdentityFullDescription,
@@ -104,7 +105,7 @@ INSERT INTO tenk1(unique1) VALUES (1);
 		"formats_mode","libpq",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -132,7 +133,7 @@ INSERT INTO tenk1(unique1) VALUES (1);
 		"formats_mode","full",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -161,7 +162,7 @@ INSERT INTO tbl_identity_full(f1,f2) VALUES (1,'2');
 		"formats_mode","omit_nulls",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tblIdentityFullDescription,
@@ -190,7 +191,7 @@ INSERT INTO tenk1(unique1) VALUES (1);
 		"formats_mode","omit_nulls",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -218,7 +219,7 @@ INSERT INTO tenk1(unique1) VALUES (1);
 		"formats_mode","omit_nulls",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -247,7 +248,7 @@ INSERT INTO tbl_identity_full(f1,f2) VALUES (1,'2');
 		"formats_mode","omit_nulls",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tblIdentityFullDescription,

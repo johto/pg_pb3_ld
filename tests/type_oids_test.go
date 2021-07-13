@@ -1,6 +1,7 @@
 package test
 
 import (
+	proto "github.com/golang/protobuf/proto"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ COMMIT;
 		"enable_commit_messages","no",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -82,7 +83,7 @@ COMMIT;
 		"enable_commit_messages","no",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,

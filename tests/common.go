@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/jackc/pgx/v4"
 	proto "github.com/golang/protobuf/proto"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -159,7 +158,7 @@ func testTeardown(t *testing.T, dbh *pgx.Conn) {
 	_ = dbh.Close(context.Background())
 }
 
-func runTest(t *testing.T, dbh *pgx.Conn, sql string, options []string, expectedMessages []interface{}) {
+func runTest(t *testing.T, dbh *pgx.Conn, sql string, options []string, expectedMessages []proto.Message) {
 	if options == nil {
 		options = []string{}
 	}
@@ -203,7 +202,7 @@ func runTest(t *testing.T, dbh *pgx.Conn, sql string, options []string, expected
 
 		var receivedTextFormat string
 
-		var msg interface{}
+		var msg proto.Message
 		switch wireMsg.Typ {
 			case WireMessageType_WMSG_BEGIN:
 				begin := &BeginTransaction{}
@@ -253,7 +252,7 @@ func runTest(t *testing.T, dbh *pgx.Conn, sql string, options []string, expected
 			t.Fatalf("found message %+#v after the last expected message", msg)
 		}
 
-		if !reflect.DeepEqual(msg, expectedMessages[0]) {
+		if !proto.Equal(msg, expectedMessages[0]) {
 			t.Logf("message number %d does not match:\n    %T:%+v\n\n  is not equal to\n\n    %T:%+v",
 					 messageNum, msg, msg, expectedMessages[0], expectedMessages[0])
 			t.Logf("received message was: %s", receivedTextFormat)

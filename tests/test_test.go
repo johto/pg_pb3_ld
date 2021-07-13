@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	proto "github.com/golang/protobuf/proto"
 	"strings"
 	"testing"
 	"os"
@@ -21,7 +22,7 @@ COMMIT;
 
 	options := []string{}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -77,7 +78,7 @@ COMMIT;
 		"enable_commit_messages",	"on",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected, &BeginTransaction{})
 	expected = append(expected, &CommitTransaction{})
 	runTest(t, dbh, sql, options, expected)
@@ -147,7 +148,7 @@ COMMIT;
 		}
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected, trl(110))
 	expected = append(expected, trl(111))
 	expected = append(expected, trl(112))
@@ -186,7 +187,7 @@ COMMIT;
 
 	options := []string{"enable_table_oids","on"}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: &tdCopy,
@@ -245,7 +246,7 @@ COMMIT;
 		"formats_mode","full",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -309,10 +310,10 @@ INSERT INTO tenk1(unique1) VALUES (1);
 
 	options := []string{
 		"enable_commit_messages","no",
-		"binary_oid_ranges","0-1,2-400,401-4000",
+		"binary_oid_ranges","1,2-2,3-400,401-4000",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -339,7 +340,7 @@ INSERT INTO tenk1(unique1, string4) VALUES (2, 'foobarbaz');
 		"binary_oid_ranges","25",
 	}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
@@ -366,7 +367,7 @@ func TestLargeEmbeddedMessage(t *testing.T) {
 
 	options := []string{}
 
-	var expected []interface{}
+	var expected []proto.Message
 	expected = append(expected,
 		&InsertDescription{
 			Table: tenk1TableDescriptionNoOid,
