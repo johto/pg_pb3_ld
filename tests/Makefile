@@ -3,16 +3,16 @@ PROTOFILE_PATH := $(CWD)/../pg_pb3.proto
 
 all: check
 
-check: proto.pb.go
+check: pg_pb3_test.pb.go
 	go test -v .
 
-proto.proto: $(PROTOFILE_PATH)
-	(head -2 $(PROTOFILE_PATH) > proto.proto) && (echo 'package test;' >> proto.proto) && (tail -n +2 $(PROTOFILE_PATH) >> proto.proto)
+pg_pb3_test.proto: $(PROTOFILE_PATH)
+	go generate
 
-proto.pb.go: proto.proto
-	protoc --go_out=. proto.proto
+pg_pb3_test.pb.go: pg_pb3_test.proto
+	protoc --go_out=. pg_pb3_test.proto && sed -i '' -e 's/^package __$$/package test/' pg_pb3_test.pb.go
 
 clean:
-	rm -f proto.pb.go proto.proto
+	rm -f pg_pb3_test.proto pg_pb3_test.pb.go
 
 .PHONY: check clean

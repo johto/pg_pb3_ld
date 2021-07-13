@@ -4,5 +4,5 @@
 /decoder/pg_pb3_ld.so
 /decoder/pb3.o
 /decoder/utils.o
-/tests/proto.pb.go
-/tests/proto.proto
+/tests/pg_pb3_test.proto
+/tests/pg_pb3_test.pb.go
