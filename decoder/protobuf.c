@@ -128,5 +128,5 @@ pb3_fix_reserved_length(StringInfo s, int reserved_start, int reserved_len)
 		*reserved++ = (char) (0x80 | ((uint8) msg_len & 0x7F));
 		msg_len >>= 7;
 	}
-	*reserved++ = (char) ((uint8) msg_len);
+	*reserved = (char) ((uint8) msg_len);
 }
