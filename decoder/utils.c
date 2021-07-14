@@ -142,7 +142,7 @@ pb3ld_parse_binary_oid_ranges(const char *input)
 			if (previous.max >= current.min)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("binary_oid_ranges range %u - %u overlaps with range %u - %u",
+						 errmsg("binary_oid_ranges range %u - %u overlaps with or precedes range %u - %u",
 								previous.min, previous.max,
 								current.min, current.max)));
 		}

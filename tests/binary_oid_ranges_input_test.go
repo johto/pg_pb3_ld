@@ -25,8 +25,9 @@ func TestBinaryOidRangesInput(t *testing.T) {
 		{"1-,", true, "invalid input syntax for binary_oid_ranges"},
 		{"1,2", false, ""},
 		{"2-1", true, "the upper bound of a range can't be lower than its lower bound"},
-		{"1,1-2", true, "overlaps with range"},
-		{"1-3,2-4", true, "overlaps with range"},
+		{"1,1-2", true, "overlaps with or precedes range"},
+		{"1-3,2-4", true, "overlaps with or precedes range"},
+		{"3-4,1-2", true, "overlaps with or precedes range"},
 		{"1,2,3,4,5,6,7,8,9,10", false, ""},
 		{"1-2,3,4-5", false, ""},
 	}
