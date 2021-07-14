@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package "pg_pb3_ld";
+package pg_pb3_ld;
 
 option go_package = "github.com/johto/pg_pb3_ld";
 
