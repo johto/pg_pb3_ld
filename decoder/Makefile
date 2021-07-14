@@ -1,5 +1,5 @@
 MODULE_big = pg_pb3_ld
-OBJS = pg_pb3_ld.o pb3.o utils.o
+OBJS = pg_pb3_ld.o protobuf.o utils.o
 
 #REGRESS = TODO
 

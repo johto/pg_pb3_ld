@@ -47,7 +47,7 @@ typedef struct
 	bool	table_oids_enabled;
 } PB3LD_Private;
 
-/* pb3.c */
+/* protobuf.c */
 
 extern void pb3_append_int32(StringInfo s, int32 val);
 

@@ -2,7 +2,7 @@
 /decoder/.deps/*
 /decoder/pg_pb3_ld.o
 /decoder/pg_pb3_ld.so
-/decoder/pb3.o
+/decoder/protobuf.o
 /decoder/utils.o
 /tests/pg_pb3_test.proto
 /tests/pg_pb3_test.pb.go
