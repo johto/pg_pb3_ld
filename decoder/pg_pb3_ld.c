@@ -124,16 +124,27 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 
 	(void) is_init;
 
+	opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
+
 	privdata = palloc(sizeof(PB3LD_Private));
-	privdata->context = AllocSetContextCreate(ctx->context,
-											  "PB3LD memory context",
-											  ALLOCSET_DEFAULT_MINSIZE,
-											  ALLOCSET_DEFAULT_INITSIZE,
-											  ALLOCSET_DEFAULT_MAXSIZE);
+	privdata->change_context = AllocSetContextCreate(ctx->context,
+													 "PB3LD change memory context",
+													 ALLOCSET_DEFAULT_MINSIZE,
+													 ALLOCSET_DEFAULT_INITSIZE,
+													 ALLOCSET_DEFAULT_MAXSIZE);
 
 	ctx->output_plugin_private = privdata;
 
-	opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
+	privdata->sent_message_this_transaction = false;
+	/* TODO: this could be configurable */
+	privdata->wire_message_target_size = 4 * 1024 * 1024;
+	privdata->buf_context = AllocSetContextCreate(ctx->context,
+												  "PB3LD internal buffer memory context",
+												  ALLOCSET_DEFAULT_MINSIZE,
+												  ALLOCSET_DEFAULT_INITSIZE,
+												  ALLOCSET_DEFAULT_MAXSIZE);
+	privdata->header_buf = makeStringInfo();
+	privdata->message_buf = makeStringInfo();
 
 	privdata->begin_messages_enabled = false;
 	privdata->commit_messages_enabled = true;
@@ -244,6 +255,8 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 							elem->arg ? strVal(elem->arg) : "(null)")));
 		}
 	}
+
+	enlargeStringInfo(privdata->message_buf, 2 * privdata->wire_message_target_size);
 }
 
 static void
@@ -251,7 +264,8 @@ pb3ld_shutdown(LogicalDecodingContext *ctx)
 {
 	PB3LD_Private *privdata = ctx->output_plugin_private;
 
-	MemoryContextDelete(privdata->context);
+	MemoryContextDelete(privdata->change_context);
+	MemoryContextDelete(privdata->buf_context);
 }
 
 
@@ -261,12 +275,16 @@ pb3ld_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
 	PB3LD_Private *privdata = ctx->output_plugin_private;
 
-	if (!privdata->begin_messages_enabled)
-		return;
+	Assert(privdata->header_buf->len == 0);
+	Assert(privdata->message_buf->len == 0);
 
-	OutputPluginPrepareWrite(ctx, true);
-	pb3_append_wmsg_header(ctx->out, PB3LD_WMSG_BEGIN);
-	OutputPluginWrite(ctx, true);
+	privdata->sent_message_this_transaction = false;
+
+	if (privdata->begin_messages_enabled)
+	{
+		pb3ld_wire_message_begin(privdata, PB3LD_WMSG_BEGIN);
+		pb3ld_wire_message_end(privdata, PB3LD_WMSG_BEGIN);
+	}
 }
 
 /* COMMIT callback */
@@ -276,12 +294,24 @@ pb3ld_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PB3LD_Private *privdata = ctx->output_plugin_private;
 
-	if (!privdata->commit_messages_enabled)
+	if (!privdata->sent_message_this_transaction && privdata->header_buf->len == 0)
+	{
+		/* ignore transactions with no decoded changes */
 		return;
+	}
 
-	OutputPluginPrepareWrite(ctx, true);
-	pb3_append_wmsg_header(ctx->out, PB3LD_WMSG_COMMIT);
-	OutputPluginWrite(ctx, true);
+	if (privdata->commit_messages_enabled)
+	{
+		pb3ld_wire_message_begin(privdata, PB3LD_WMSG_COMMIT);
+		pb3ld_wire_message_end(privdata, PB3LD_WMSG_COMMIT);
+	}
+
+	if (privdata->header_buf->len > 0)
+	{
+		OutputPluginPrepareWrite(ctx, true);
+		pb3ld_flush_message_buffer(privdata, ctx->out);
+		OutputPluginWrite(ctx, true);
+	}
 }
 
 static void
@@ -603,7 +633,7 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	char relreplident = relation->rd_rel->relreplident;
 	Oid rd_replidindex = InvalidOid;
 	PB3LD_FieldSetDescription fds;
-	MemoryContext old;
+	MemoryContext oldcxt;
 
 	if (relreplident == REPLICA_IDENTITY_NOTHING)
 	{
@@ -637,40 +667,40 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		elog(ERROR, "unexpected replica identity %d", relreplident);
 	}
 
-	old = MemoryContextSwitchTo(privdata->context);
-
-	OutputPluginPrepareWrite(ctx, true);
+	oldcxt = MemoryContextSwitchTo(privdata->change_context);
 
 	switch (change->action)
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
-			pb3_append_wmsg_header(ctx->out, PB3LD_WMSG_INSERT);
+			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_INSERT);
 
-			pb3_append_varlen_key(ctx->out, PB3LD_INS_TABLE_DESC);
-			pb3ld_write_TableDescription(privdata, ctx->out, relation);
+			pb3_append_varlen_key(privdata->message_buf, PB3LD_INS_TABLE_DESC);
+			pb3ld_write_TableDescription(privdata, privdata->message_buf, relation);
 
 			Assert(change->data.tp.newtuple != NULL);
 
 			pb3ld_fds_init(privdata, &fds, relation);
 
-			pb3_append_varlen_key(ctx->out, PB3LD_INS_NEW_VALUES);
-			pb3ld_write_FieldSetDescription(&fds, 2, ctx->out, change->data.tp.newtuple, InvalidOid);
+			pb3_append_varlen_key(privdata->message_buf, PB3LD_INS_NEW_VALUES);
+			pb3ld_write_FieldSetDescription(&fds, 2, privdata->message_buf, change->data.tp.newtuple, InvalidOid);
+
+			pb3ld_wire_message_end(privdata, PB3LD_WMSG_INSERT);
 
 			if (change->data.tp.oldtuple != NULL)
 				elog(ERROR, "oldtuple is not NULL in INSERT");
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
-			pb3_append_wmsg_header(ctx->out, PB3LD_WMSG_UPDATE);
+			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_UPDATE);
 
-			pb3_append_varlen_key(ctx->out, PB3LD_UPD_TABLE_DESC);
-			pb3ld_write_TableDescription(privdata, ctx->out, relation);
+			pb3_append_varlen_key(privdata->message_buf, PB3LD_UPD_TABLE_DESC);
+			pb3ld_write_TableDescription(privdata, privdata->message_buf, relation);
 
 			Assert(change->data.tp.newtuple != NULL);
 
 			pb3ld_fds_init(privdata, &fds, relation);
 
-			pb3_append_varlen_key(ctx->out, PB3LD_UPD_NEW_VALUES);
-			pb3ld_write_FieldSetDescription(&fds, 2, ctx->out, change->data.tp.newtuple, InvalidOid);
+			pb3_append_varlen_key(privdata->message_buf, PB3LD_UPD_NEW_VALUES);
+			pb3ld_write_FieldSetDescription(&fds, 2, privdata->message_buf, change->data.tp.newtuple, InvalidOid);
 
 			if (change->data.tp.oldtuple != NULL || OidIsValid(rd_replidindex))
 			{
@@ -683,15 +713,18 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 				pb3ld_fds_reset(&fds);
 
-				pb3_append_varlen_key(ctx->out, PB3LD_UPD_KEY_FIELDS);
-				pb3ld_write_FieldSetDescription(&fds, 2, ctx->out, keytuple, rd_replidindex);
+				pb3_append_varlen_key(privdata->message_buf, PB3LD_UPD_KEY_FIELDS);
+				pb3ld_write_FieldSetDescription(&fds, 2, privdata->message_buf, keytuple, rd_replidindex);
 			}
+
+			pb3ld_wire_message_end(privdata, PB3LD_WMSG_UPDATE);
+
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
-			pb3_append_wmsg_header(ctx->out, PB3LD_WMSG_DELETE);
+			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_DELETE);
 
-			pb3_append_varlen_key(ctx->out, PB3LD_DEL_TABLE_DESC);
-			pb3ld_write_TableDescription(privdata, ctx->out, relation);
+			pb3_append_varlen_key(privdata->message_buf, PB3LD_DEL_TABLE_DESC);
+			pb3ld_write_TableDescription(privdata, privdata->message_buf, relation);
 
 			if (change->data.tp.newtuple != NULL)
 				elog(ERROR, "newtuple is not NULL in DELETE");
@@ -700,17 +733,25 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			{
 				pb3ld_fds_init(privdata, &fds, relation);
 
-				pb3_append_varlen_key(ctx->out, PB3LD_DEL_KEY_FIELDS);
-				pb3ld_write_FieldSetDescription(&fds, 1, ctx->out, change->data.tp.oldtuple, rd_replidindex);
+				pb3_append_varlen_key(privdata->message_buf, PB3LD_DEL_KEY_FIELDS);
+				pb3ld_write_FieldSetDescription(&fds, 1, privdata->message_buf, change->data.tp.oldtuple, rd_replidindex);
 			}
+
+			pb3ld_wire_message_end(privdata, PB3LD_WMSG_DELETE);
+
 			break;
 		default:
 			elog(ERROR, "unexpected change action %d", change->action);
 			break;
 	}
 
-	OutputPluginWrite(ctx, true);
+	if (pb3ld_should_flush_message_buffer(privdata))
+	{
+		OutputPluginPrepareWrite(ctx, true);
+		pb3ld_flush_message_buffer(privdata, ctx->out);
+		OutputPluginWrite(ctx, true);
+	}
 
-	MemoryContextSwitchTo(old);
-	MemoryContextReset(privdata->context);
+	MemoryContextSwitchTo(oldcxt);
+	MemoryContextReset(privdata->change_context);
 }

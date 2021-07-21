@@ -13,7 +13,8 @@ enum WireMessageType {
 }
 
 message WireMessageHeader {
-    WireMessageType typ = 1;
+    repeated WireMessageType types = 1;
+    repeated int32 offsets = 2;
 }
 
 message BeginTransaction {

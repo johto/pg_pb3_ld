@@ -6,6 +6,9 @@
 
 #include "pg_pb3_ld.h"
 
+/* WireMessageHeader */
+#define PB3LD_WHDR_TYPES	1
+#define PB3LD_WHDR_OFFSETS	2
 
 static Oid
 pb3ld_parse_binary_oid_value(const char *value)
@@ -153,4 +156,58 @@ pb3ld_parse_binary_oid_ranges(const char *input)
 	}
 
 	return ranges;
+}
+
+void
+pb3ld_wire_message_begin(PB3LD_Private *privdata, int32 msgtype)
+{
+	pb3_append_enum_kv(privdata->header_buf, PB3LD_WHDR_TYPES, msgtype);
+	pb3_append_varint_kv(privdata->header_buf, PB3LD_WHDR_OFFSETS, privdata->message_buf->len);
+}
+
+void
+pb3ld_wire_message_end(PB3LD_Private *privdata, int32 msgtype)
+{
+}
+
+bool
+pb3ld_should_flush_message_buffer(PB3LD_Private *privdata)
+{
+	return privdata->message_buf->len > privdata->wire_message_target_size;
+}
+
+void
+pb3ld_flush_message_buffer(PB3LD_Private *privdata, StringInfo out)
+{
+	const int desired_alloc_len = privdata->wire_message_target_size * 2;
+
+	Assert(privdata->message_buf->len > 0);
+	Assert(privdata->header_buf->len > 0);
+
+	pb3_append_int32(out, privdata->header_buf->len);
+	appendBinaryStringInfo(out, privdata->header_buf->data, privdata->header_buf->len);
+	appendBinaryStringInfo(out, privdata->message_buf->data, privdata->message_buf->len);
+
+	privdata->sent_message_this_transaction = true;
+
+	/*
+	 * If we needed more memory than expected to process this message, release
+	 * it now.
+	 */
+	if (privdata->message_buf->maxlen > desired_alloc_len)
+	{
+		MemoryContext oldcxt;
+
+		pfree(privdata->message_buf->data);
+
+		oldcxt = MemoryContextSwitchTo(privdata->buf_context);
+
+		privdata->message_buf->data = palloc(desired_alloc_len);
+		privdata->message_buf->maxlen = desired_alloc_len;
+
+		MemoryContextSwitchTo(oldcxt);
+	}
+
+	resetStringInfo(privdata->header_buf);
+	resetStringInfo(privdata->message_buf);
 }

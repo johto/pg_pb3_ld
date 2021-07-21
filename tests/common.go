@@ -187,80 +187,113 @@ func runTest(t *testing.T, dbh *pgx.Conn, sql string, options []string, expected
 			t.Fatal(err)
 		}
 
-		// N.B: Empty messages (i.e. nothing after the header) are perfectly
-		// valid for e.g. BeginTransaction.
-		if len(data) < 2 {
+		if len(data) < 3 {
 			t.Fatalf("unexpected data %+#v length %d", data, len(data))
+		}
+		header_len := int32(0)
+		for i := 0; ; i++ {
+			if i > 6 || i >= len(data) {
+				t.Fatalf("could not parse wire message header %+#v", data)
+			}
+			header_len = int32(data[i] & 0x7F);
+			if (data[i] & 0x7F) == data[i] {
+				data = data[i + 1:]
+				break
+			}
 		}
 
 		wireMsg := &WireMessageHeader{}
-		err = proto.Unmarshal(data[:2], wireMsg)
+		err = proto.Unmarshal(data[:header_len], wireMsg)
 		if err != nil {
 			t.Fatal(err)
 		}
-		data = data[2:]
+		data = data[header_len:]
 
-		var receivedTextFormat string
-
-		var msg proto.Message
-		switch wireMsg.Typ {
-			case WireMessageType_WMSG_BEGIN:
-				begin := &BeginTransaction{}
-				err = proto.Unmarshal(data, begin)
-				if err != nil {
-					t.Fatal(err)
-				}
-				receivedTextFormat = proto.MarshalTextString(begin)
-				msg = begin
-			case WireMessageType_WMSG_COMMIT:
-				commit := &CommitTransaction{}
-				err = proto.Unmarshal(data, commit)
-				if err != nil {
-					t.Fatal(err)
-				}
-				receivedTextFormat = proto.MarshalTextString(commit)
-				msg = commit
-			case WireMessageType_WMSG_INSERT:
-				ins := &InsertDescription{}
-				err = proto.Unmarshal(data, ins)
-				if err != nil {
-					t.Fatal(err)
-				}
-				receivedTextFormat = proto.MarshalTextString(ins)
-				msg = ins
-			case WireMessageType_WMSG_UPDATE:
-				upd := &UpdateDescription{}
-				err = proto.Unmarshal(data, upd)
-				if err != nil {
-					t.Fatal(err)
-				}
-				receivedTextFormat = proto.MarshalTextString(upd)
-				msg = upd
-			case WireMessageType_WMSG_DELETE:
-				del := &DeleteDescription{}
-				err = proto.Unmarshal(data, del)
-				if err != nil {
-					t.Fatal(err)
-				}
-				receivedTextFormat = proto.MarshalTextString(del)
-				msg = del
-			default:
-				t.Fatalf("unknown wire message type %+#v", wireMsg.Typ)
+		if len(wireMsg.Types) != len(wireMsg.Offsets) {
+			t.Fatalf(
+				"invalid wireMsg: len(Types) %d != len(Offsets) %d",
+				len(wireMsg.Types),
+				len(wireMsg.Offsets),
+			)
 		}
 
-		if len(expectedMessages) == 0 {
-			t.Fatalf("found message %+#v after the last expected message", msg)
-		}
+		for i, typ := range wireMsg.Types {
+			var receivedTextFormat string
+			var msg proto.Message
 
-		if !proto.Equal(msg, expectedMessages[0]) {
-			t.Logf("message number %d does not match:\n    %T:%+v\n\n  is not equal to\n\n    %T:%+v",
-					 messageNum, msg, msg, expectedMessages[0], expectedMessages[0])
-			t.Logf("received message was: %s", receivedTextFormat)
-			t.FailNow()
-		}
+			offset := wireMsg.Offsets[i]
+			if offset > int32(len(data)) {
+				t.Fatalf(
+					"invalid wireMsg: offset %d > len(data) %d",
+					offset,
+					len(data),
+				)
+			}
+			msgData := data[offset:]
+			if i + 1 < len(wireMsg.Offsets) {
+				nextOffset := wireMsg.Offsets[i + 1]
+				msgLen := nextOffset - offset
+				msgData = msgData[:msgLen]
+			}
 
-		expectedMessages = expectedMessages[1:]
-		messageNum++
+			switch typ {
+				case WireMessageType_WMSG_BEGIN:
+					begin := &BeginTransaction{}
+					err = proto.Unmarshal(msgData, begin)
+					if err != nil {
+						t.Fatal(err)
+					}
+					receivedTextFormat = proto.MarshalTextString(begin)
+					msg = begin
+				case WireMessageType_WMSG_COMMIT:
+					commit := &CommitTransaction{}
+					err = proto.Unmarshal(msgData, commit)
+					if err != nil {
+						t.Fatal(err)
+					}
+					receivedTextFormat = proto.MarshalTextString(commit)
+					msg = commit
+				case WireMessageType_WMSG_INSERT:
+					ins := &InsertDescription{}
+					err = proto.Unmarshal(msgData, ins)
+					if err != nil {
+						t.Fatal(err)
+					}
+					receivedTextFormat = proto.MarshalTextString(ins)
+					msg = ins
+				case WireMessageType_WMSG_UPDATE:
+					upd := &UpdateDescription{}
+					err = proto.Unmarshal(msgData, upd)
+					if err != nil {
+						t.Fatal(err)
+					}
+					receivedTextFormat = proto.MarshalTextString(upd)
+					msg = upd
+				case WireMessageType_WMSG_DELETE:
+					del := &DeleteDescription{}
+					err = proto.Unmarshal(msgData, del)
+					if err != nil {
+						t.Fatal(err)
+					}
+					receivedTextFormat = proto.MarshalTextString(del)
+					msg = del
+				default:
+					t.Fatalf("unknown wire message type %+#v", typ)
+			}
+			if len(expectedMessages) == 0 {
+				t.Fatalf("found message %+#v after the last expected message", msg)
+			}
+
+			if !proto.Equal(msg, expectedMessages[0]) {
+				t.Logf("message number %d does not match:\n    %T:%+v\n\n  is not equal to\n\n    %T:%+v",
+						 messageNum, msg, msg, expectedMessages[0], expectedMessages[0])
+				t.Logf("received message was: %s", receivedTextFormat)
+				t.FailNow()
+			}
+
+			expectedMessages = expectedMessages[1:]
+			messageNum++
+		}
 	}
 	if rows.Err() != nil {
 		t.Fatal(rows.Err())

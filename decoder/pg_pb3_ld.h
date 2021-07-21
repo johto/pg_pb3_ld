@@ -5,6 +5,8 @@
 
 #include "lib/stringinfo.h"
 
+struct PB3LD_Private;
+
 /* utils.c */
 
 typedef struct {
@@ -13,6 +15,10 @@ typedef struct {
 } PB3LD_Oid_Range;
 
 extern PB3LD_Oid_Range *pb3ld_parse_binary_oid_ranges(const char *input);
+extern void pb3ld_wire_message_begin(struct PB3LD_Private *privdata, int32 msgtype);
+extern void pb3ld_wire_message_end(struct PB3LD_Private *privdata, int32 msgtype);
+extern bool pb3ld_should_flush_message_buffer(struct PB3LD_Private *privdata);
+extern void pb3ld_flush_message_buffer(struct PB3LD_Private *privdata, StringInfo out);
 
 /* pg_pb3_ld.c */
 
@@ -29,11 +35,17 @@ typedef enum {
 	PB3LD_FSD_FORMATS_FULL,
 } PB3LD_FSD_Formats_Mode;
 
-typedef struct
+typedef struct PB3LD_Private
 {
-	MemoryContext context;
+	MemoryContext change_context;
 
 	int32	protocol_version;
+
+	bool	sent_message_this_transaction;
+	int		wire_message_target_size;
+	MemoryContext buf_context;
+	StringInfo header_buf;
+	StringInfo message_buf;
 
 	bool	begin_messages_enabled;
 	bool	commit_messages_enabled;
