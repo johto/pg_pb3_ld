@@ -4,6 +4,7 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pglogrepl"
@@ -14,13 +15,17 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
 
+const MAX_IDENTIFIER_LENGTH int = 63
+
 const (
 	SQL_INTEGER = iota
+	SQL_BIGINT
+	SQL_FLOAT4
+	SQL_FLOAT8
 	SQL_BYTEA
 	//SQL_TEXT
 )
@@ -29,18 +34,50 @@ type SQLValue struct {
 	Null bool
 	Binary bool
 	Datum []byte
+	TextRepresentation string
+}
+
+var SQL_NULL = SQLValue{
+	Null: true,
+	Binary: false,
+	Datum: nil,
+	TextRepresentation: "",
 }
 
 type SQLType int
+
+func NewRandomSQLType() SQLType {
+	v := rand.Intn(5)
+	switch v {
+		case 0:
+			return SQL_INTEGER
+		case 1:
+			return SQL_BIGINT
+		case 2:
+			return SQL_FLOAT4
+		case 3:
+			return SQL_FLOAT8
+		case 4:
+			return SQL_BYTEA
+		default:
+			panic(v)
+	}
+}
 
 func (t SQLType) String() string {
 	switch t {
 		case SQL_INTEGER:
 			return "int4"
+		case SQL_BIGINT:
+			return "int8"
+		case SQL_FLOAT4:
+			return "float4"
+		case SQL_FLOAT8:
+			return "float8"
 		case SQL_BYTEA:
 			return "bytea"
 		default:
-			panic(t)
+			panic(fmt.Sprintf("SQLType %d", t))
 	}
 }
 
@@ -48,40 +85,17 @@ func (t SQLType) Oid() uint32 {
 	switch t {
 		case SQL_INTEGER:
 			return 23
+		case SQL_BIGINT:
+			return 20
+		case SQL_FLOAT4:
+			return 700
+		case SQL_FLOAT8:
+			return 701
 		case SQL_BYTEA:
 			return 17
 		default:
 			panic(t)
 	}
-}
-
-type FuzzerError struct {
-	Transaction *TestTransaction
-	ExpectedMessages []proto.Message
-	ReceivedMessages []proto.Message
-	Err error
-}
-
-func (fe *FuzzerError) DescribeExpectedMessages() string {
-	var descriptions []string
-	for _, msg := range fe.ExpectedMessages {
-		desc := fmt.Sprintf("%T%s", msg, proto.MarshalTextString(msg))
-		descriptions = append(descriptions, desc)
-	}
-	return strings.Join(descriptions, "\n")
-}
-
-func (fe *FuzzerError) DescribeReceivedMessages() string {
-	var descriptions []string
-	for _, msg := range fe.ReceivedMessages {
-		desc := fmt.Sprintf("%T%s", msg, proto.MarshalTextString(msg))
-		descriptions = append(descriptions, desc)
-	}
-	return strings.Join(descriptions, "\n")
-}
-
-func (fe *FuzzerError) Error() string {
-	return fe.Err.Error()
 }
 
 type TestSchema struct {
@@ -91,20 +105,8 @@ type TestSchema struct {
 	ColumnTypes []SQLType
 }
 
-type TestCase struct {
-}
-
 var replicationSlotName string = "pgpb3ldtest"
 var outputPluginName string = "pg_pb3_ld"
-
-func generateSQLType() SQLType {
-	v := rand.Intn(1)
-	if v == 0 {
-		return SQL_INTEGER
-	} else {
-		panic(v)
-	}
-}
 
 type SchemaGenerator interface {
 	GenerateSchema() *TestSchema
@@ -130,156 +132,6 @@ type TestOperation interface {
 	Execute(schema *TestSchema, txn pgx.Tx) error
 	ExpectedMessages(schema *TestSchema) []proto.Message
 	Describe() string
-}
-
-type TestInsert struct {
-	TableName string
-	Values []SQLValue
-}
-
-func (ti *TestInsert) Execute(schema *TestSchema, txn pgx.Tx) error {
-	conn := txn.Conn().PgConn()
-
-	sql := "INSERT INTO \"" + ti.TableName + "\" VALUES ("
-	paramFormats := make([]int16, len(ti.Values))
-	paramValues := make([][]byte, len(ti.Values))
-	paramOids := make([]uint32, len(ti.Values))
-	for i, val := range ti.Values {
-		if val.Null {
-			paramValues[i] = nil
-		} else {
-			paramValues[i] = val.Datum
-		}
-		if val.Binary {
-			paramFormats[i] = 1
-		} else {
-			paramFormats[i] = 0
-		}
-		paramOids[i] = schema.ColumnTypes[i].Oid()
-	}
-	for i := range ti.Values {
-		if i > 0 {
-			sql += ", "
-		}
-		sql += "$" + strconv.Itoa(i + 1)
-	}
-	sql += ")"
-
-	if len(ti.Values) == 0 {
-		sql = "INSERT INTO \"" + ti.TableName + "\" DEFAULT VALUES"
-	}
-
-	res := conn.ExecParams(context.Background(), sql, paramValues, paramOids, paramFormats, nil)
-	_, err := res.Close()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (ti *TestInsert) ExpectedMessages(schema *TestSchema) []proto.Message {
-	values := make([][]byte, len(ti.Values))
-	// omit_nulls
-	var typeOids []uint32
-	nulls := make([]byte, len(ti.Values))
-	// disabled
-	formats := []byte(nil)
-	for i, val := range ti.Values {
-		if val.Null {
-			values[i] = []byte{}
-			nulls[i] = '\x01'
-		} else {
-			values[i] = val.Datum
-			nulls[i] = '\x00'
-			typeOids = append(typeOids, schema.ColumnTypes[i].Oid())
-		}
-	}
-	id := &InsertDescription{
-		Table: &TableDescription{
-			SchemaName: "public",
-			TableName: ti.TableName,
-		},
-		NewValues: &FieldSetDescription{
-			Names: schema.ColumnNames,
-			Values: values,
-			TypeOids: typeOids,
-			Nulls: nulls,
-			Formats: formats,
-		},
-	}
-	return []proto.Message{id}
-}
-
-func (ti *TestInsert) Describe() string {
-	value := "Insert " + ti.TableName + " {\n"
-	for i, val := range ti.Values {
-		if i > 0 {
-			value += ",\n"
-		}
-		if val.Null {
-			value += "    nil"
-		} else {
-			value += fmt.Sprintf("    %q", val.Datum)
-		}
-	}
-	value += "\n}"
-	return value
-}
-
-func generateSQLValue(t SQLType) []byte {
-	if t == SQL_INTEGER {
-		r := rand.Int63n(4294967296)
-		return []byte(strconv.Itoa(int(r - 2147483648)))
-	} else {
-		panic(t)
-	}
-}
-
-func generateSQLIdentifier() string {
-	alphabet := []byte("abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-	var length int
-	for {
-		length = int(rand.NormFloat64() * 10 + 5)
-		if length > 0 && length <= 63 {
-			break
-		}
-	}
-	value := ""
-	for i := 0; i < length; i++ {
-		value += string(alphabet[rand.Intn(len(alphabet))])
-	}
-	return value
-}
-
-func generateFuzzedSchema() TestSchema {
-	schema := TestSchema{}
-
-	for {
-		schema.NumColumns = int(rand.NormFloat64() * 10 + 5)
-		if schema.NumColumns > 0 && schema.NumColumns < 512 {
-			break
-		}
-	}
-
-	schema.TableName = generateSQLIdentifier()
-	schema.ColumnNames = make([]string, schema.NumColumns)
-	schema.ColumnTypes = make([]SQLType, schema.NumColumns)
-	columns := make(map[string]struct{})
-	for i := 0; i < schema.NumColumns; i++ {
-		for {
-			schema.ColumnNames[i] = generateSQLIdentifier()
-			_, exists := columns[schema.ColumnNames[i]]
-			if !exists {
-				columns[schema.ColumnNames[i]] = struct{}{}
-				break
-			}
-		}
-		schema.ColumnTypes[i] = generateSQLType()
-	}
-
-	return schema
 }
 
 func (s *TestSchema) SetupSQL() string {
@@ -312,6 +164,8 @@ type DecodedMessage struct {
 }
 
 type Fuzzer struct {
+	lastStatusMessage time.Time
+
 	dbh *pgx.Conn
 	conninfo []string
 
@@ -335,9 +189,14 @@ func NewFuzzer(conninfo []string) *Fuzzer {
 	}
 
 	fuzzer := &Fuzzer{
+		lastStatusMessage: time.Time{},
+
 		dbh: dbh,
-		replConn: nil,
 		conninfo: conninfo,
+
+		replConn: nil,
+		replCancel: nil,
+		replMessageChan: nil,
 	}
 
 	fuzzer.createReplicationSlot()
@@ -418,17 +277,16 @@ func (f *Fuzzer) closeReplicationConnection() {
 }
 
 func (f *Fuzzer) MainLoop() {
-	sg := NewExhaustiveSchemaGenerator()
+	sg := NewFuzzySchemaGenerator()
 	for {
 		schema := sg.GenerateSchema()
-		generator := NewExhaustiveTransactionGenerator(schema)
+		generator := NewFuzzyTransactionGenerator(schema)
 		err := f.testMain(schema, generator)
 		if err != nil {
 			f.closeReplicationConnection()
 			time.Sleep(5 * time.Second)
 		}
 		//time.Sleep(time.Second)
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -469,6 +327,17 @@ func (f *Fuzzer) runTests(schema *TestSchema, generator TransactionGenerator) er
 			break
 		}
 
+		now := time.Now()
+		if now.Sub(f.lastStatusMessage) > 5 * time.Second {
+			log.Printf(
+				"DEBUG: working on table %s columns %s",
+				schema.TableName,
+				strings.Join(schema.ColumnNames, ", "),
+			)
+			f.lastStatusMessage = now
+		}
+
+
 		dbtxn, err := f.dbh.Begin(context.Background())
 		if err != nil {
 			return err
@@ -504,7 +373,12 @@ func (f *Fuzzer) runTests(schema *TestSchema, generator TransactionGenerator) er
 					}
 			}
 			if decodedMessage.Err != nil {
-				return decodedMessage.Err
+				return &FuzzerError{
+					Transaction: txn,
+					ExpectedMessages: expectedMessages,
+					ReceivedMessages: receivedMessages,
+					Err: decodedMessage.Err,
+				}
 			}
 			if decodedMessage.LSN < minimumLSN {
 				continue
@@ -649,24 +523,35 @@ func (f *Fuzzer) parseWireMessage(data []byte) ([]proto.Message, error) {
 	if len(data) < 3 {
 		return nil, fmt.Errorf("unexpected wire message %+#v length %d", data, len(data))
 	}
-	header_len := int32(0)
-	for i := 0; ; i++ {
-		if i > 6 || i >= len(data) {
-			return nil, fmt.Errorf("could not parse wire message header %+#v", data)
-		}
-		header_len = int32(data[i] & 0x7F);
-		if (data[i] & 0x7F) == data[i] {
-			data = data[i + 1:]
-			break
-		}
+	headerLen, numHeaderLengthBytes := binary.Uvarint(data)
+	if headerLen > uint64(len(data)) || numHeaderLengthBytes > 6 {
+		errWithData := fmt.Errorf(
+			"invalid headerLen %d or numHeaderLengthBytes %d\nheader length varint 0x%s\n",
+			headerLen,
+			numHeaderLengthBytes,
+			hex.EncodeToString(data[:numHeaderLengthBytes]),
+		)
+		return nil, errWithData
 	}
 
+	data = data[numHeaderLengthBytes:]
+	headerBytes := data[:headerLen]
+
 	wireMsg := &WireMessageHeader{}
-	err := proto.Unmarshal(data[:header_len], wireMsg)
+	err := proto.Unmarshal(headerBytes, wireMsg)
 	if err != nil {
-		return nil, fmt.Errorf("could not unmarshal WireMessageHeader: %s", err)
+		formattedData := hex.Dump(data)
+		errWithData := fmt.Errorf(
+			"could not unmarshal WireMessageHeader: %s\n\nheaderBytes 0x%s\nheaderLen %d\nnumHeaderLengthBytes %d\ndata:\n%s\n\n",
+			err,
+			hex.EncodeToString(headerBytes),
+			headerLen,
+			numHeaderLengthBytes,
+			formattedData,
+		)
+		return nil, errWithData
 	}
-	data = data[header_len:]
+	data = data[headerLen:]
 
 	if len(wireMsg.Types) != len(wireMsg.Offsets) {
 		return nil, fmt.Errorf(

@@ -4,9 +4,9 @@ import (
 	"strings"
 )
 
-const MAX_IDENTIFIER_LENGTH int = 63
-
 type ExhaustiveSchemaGenerator struct {
+	done bool
+
 	numColumns int
 	tableNameLength int
 	columnNameLengths []int
@@ -38,7 +38,7 @@ func newExhaustiveByteaGenerator() *exhaustiveByteaGenerator {
 }
 
 func (g *exhaustiveByteaGenerator) done() bool {
-	return g.length > 3
+	return g.length > 2097152 + 16
 }
 
 func (g *exhaustiveByteaGenerator) generateValue() SQLValue {
@@ -48,11 +48,7 @@ func (g *exhaustiveByteaGenerator) generateValue() SQLValue {
 
 	var value SQLValue
 	if g.length == -1 {
-		value = SQLValue{
-			Null: true,
-			Binary: false,
-			Datum: nil,
-		}
+		value = SQL_NULL
 	} else if g.length >= 0 {
 		datum := make([]byte, g.length)
 		for i := range datum {
@@ -68,6 +64,13 @@ func (g *exhaustiveByteaGenerator) generateValue() SQLValue {
 	}
 
 	g.length++
+	if g.length == 10 {
+		g.length = 127 - 16
+	} else if g.length == 127 + 16 {
+		g.length = 16384 - 16
+	} else if g.length == 16386 + 16 {
+		g.length = 2097152 - 16
+	}
 
 	return value
 }
@@ -78,6 +81,7 @@ func (g *exhaustiveByteaGenerator) reset() {
 
 func NewExhaustiveSchemaGenerator() *ExhaustiveSchemaGenerator {
 	return &ExhaustiveSchemaGenerator{
+		done: false,
 		numColumns: 0,
 		tableNameLength: 1,
 		columnNameLengths: nil,
@@ -97,6 +101,10 @@ func (sg *ExhaustiveSchemaGenerator) generateColumnName(idx int, length int) str
 }
 
 func (sg *ExhaustiveSchemaGenerator) GenerateSchema() *TestSchema {
+	if sg.done {
+		return nil
+	}
+
 	if sg.columnNameLengths == nil {
 		sg.columnNameLengths = make([]int, sg.numColumns)
 		for i := 0; i < sg.numColumns; i++ {
@@ -126,13 +134,12 @@ func (sg *ExhaustiveSchemaGenerator) GenerateSchema() *TestSchema {
 	if exhaustedColumnNameLengths {
 		sg.numColumns++
 		sg.columnNameLengths = nil
-		if sg.numColumns > 2 {
+		if sg.numColumns > 20 {
 			sg.numColumns = 0
 
 			sg.tableNameLength++
 			if sg.tableNameLength > MAX_IDENTIFIER_LENGTH {
-				sg.tableNameLength = 1
-				sg.numColumns++
+				sg.done = true
 			}
 		}
 	}
@@ -164,6 +171,7 @@ func (tg *ExhaustiveTransactionGenerator) GenerateTransaction() *TestTransaction
 	if tg.done {
 		return nil
 	}
+
 	if tg.lastGeneratedValues == nil {
 		tg.lastGeneratedValues = make([]SQLValue, len(tg.valueGenerators))
 		for i, gen := range tg.valueGenerators {
@@ -185,13 +193,16 @@ func (tg *ExhaustiveTransactionGenerator) GenerateTransaction() *TestTransaction
 
 	exhaustedGenerators := true
 	for i, gen := range tg.valueGenerators {
-		if !gen.done() {
+		if gen.done() {
+			tg.lastGeneratedValues[i] = SQLValue{
+				Null: true,
+				Binary: false,
+				Datum: nil,
+			}
+		} else {
 			tg.lastGeneratedValues[i] = gen.generateValue()
 			exhaustedGenerators = false
 			break
-		} else {
-			gen.reset()
-			tg.lastGeneratedValues[i] = gen.generateValue()
 		}
 	}
 	if exhaustedGenerators {
