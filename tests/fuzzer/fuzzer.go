@@ -328,7 +328,7 @@ func (f *Fuzzer) runTests(schema *TestSchema, generator TransactionGenerator) er
 		}
 
 		now := time.Now()
-		if now.Sub(f.lastStatusMessage) > 5 * time.Second {
+		if now.Sub(f.lastStatusMessage) > 5 * time.Minute {
 			log.Printf(
 				"DEBUG: working on table %s columns %s",
 				schema.TableName,

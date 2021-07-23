@@ -64,6 +64,7 @@ func (sg *FuzzySchemaGenerator) GenerateSchema() *TestSchema {
 type FuzzyTransactionGenerator struct {
 	schema *TestSchema
 	maxTransactions int
+	numTransactions int
 }
 
 func NewFuzzyTransactionGenerator(schema *TestSchema) *FuzzyTransactionGenerator {
@@ -71,6 +72,7 @@ func NewFuzzyTransactionGenerator(schema *TestSchema) *FuzzyTransactionGenerator
 	return &FuzzyTransactionGenerator{
 		schema: schema,
 		maxTransactions: maxTransactions,
+		numTransactions: 0,
 	}
 }
 
@@ -145,6 +147,10 @@ func (tg *FuzzyTransactionGenerator) generateSQLValue(t SQLType, sizeBudget int)
 }
 
 func (tg *FuzzyTransactionGenerator) GenerateTransaction() *TestTransaction {
+	if tg.numTransactions >= tg.maxTransactions {
+		return nil
+	}
+
 	var numOperations int
 	for {
 		numOperations = int(rand.NormFloat64() * 10 + 5)
@@ -191,6 +197,8 @@ sizeBudgetExceeded:
 	txn := &TestTransaction{
 		Operations: operations,
 	}
+
+	tg.numTransactions++
 
 	return txn
 }
