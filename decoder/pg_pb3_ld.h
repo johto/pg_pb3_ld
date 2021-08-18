@@ -3,7 +3,11 @@
 
 #include "postgres.h"
 
+#include "access/htup_details.h"
 #include "lib/stringinfo.h"
+#include "replication/output_plugin.h"
+
+#define NUM_MAX_COLUMNS (MaxHeapAttributeNumber + 1)
 
 struct PB3LD_Private;
 
@@ -20,6 +24,41 @@ extern void pb3ld_wire_message_end(struct PB3LD_Private *privdata, int32 msgtype
 extern bool pb3ld_should_flush_message_buffer(struct PB3LD_Private *privdata);
 extern void pb3ld_flush_message_buffer(struct PB3LD_Private *privdata, StringInfo out);
 
+/* fsd.c */
+
+typedef struct {
+	const struct PB3LD_Private *privdata;
+
+	int num_columns;
+
+	/*
+	 * The following columns are populated by fsd_add_attribute while the FSD
+	 * is being built.  They will be used in fsd_serialize to avoid having to
+	 * go through all the data again when calculating message length.
+	 */
+	int64 names_total_length;
+	int64 values_total_length;
+	int num_nulls;
+
+	const char *names[NUM_MAX_COLUMNS];
+	const char *values[NUM_MAX_COLUMNS];
+	int value_lengths[NUM_MAX_COLUMNS];
+	Oid type_oids[NUM_MAX_COLUMNS];
+	bool nulls[NUM_MAX_COLUMNS];
+	bool binary_formats[NUM_MAX_COLUMNS];
+} PB3LD_FieldSetDescription;
+
+extern void fsd_init(PB3LD_FieldSetDescription *fsd, const struct PB3LD_Private *privdata);
+extern void fsd_reset(PB3LD_FieldSetDescription *fsd);
+extern void fsd_populate_from_tuple(PB3LD_FieldSetDescription *fds,
+									Relation relation,
+									ReorderBufferTupleBuf *tuple);
+extern void fsd_populate_via_index(PB3LD_FieldSetDescription *fds,
+								   Relation relation,
+								   ReorderBufferTupleBuf *tuple,
+								   Oid rd_replidindex);
+extern void fsd_serialize(PB3LD_FieldSetDescription *fsd, int32 field_number, StringInfo out);
+
 /* pg_pb3_ld.c */
 
 typedef enum {
@@ -35,9 +74,18 @@ typedef enum {
 	PB3LD_FSD_FORMATS_FULL,
 } PB3LD_FSD_Formats_Mode;
 
+typedef struct {
+	char *schema_name;
+	char *table_name;
+	Oid table_oid;
+} PB3LD_TableDescription;
+
 typedef struct PB3LD_Private
 {
 	MemoryContext change_context;
+	/* Pre-allocated memory for the change code to work with. */
+	PB3LD_FieldSetDescription change_fsd_new;
+	PB3LD_FieldSetDescription change_fsd_key;
 
 	int32	protocol_version;
 

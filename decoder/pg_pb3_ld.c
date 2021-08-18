@@ -36,31 +36,12 @@
 #define PB3LD_DEL_TABLE_DESC	1
 #define PB3LD_DEL_KEY_FIELDS	3
 
-/* FieldSetDescription */
-#define PB3LD_FSD_NAMES			2
-#define PB3LD_FSD_VALUES		3
-#define PB3LD_FSD_TYPE_OIDS		4
-#define PB3LD_FSD_NULLS			5
-#define PB3LD_FSD_FORMATS		6
-
 /* TableDescription */
 #define PB3LD_TD_SCHEMANAME		1
 #define PB3LD_TD_TABLENAME		2
 #define PB3LD_TD_TABLEOID		3
 
-#define EXTERNAL_ONDISK_OK		true
-#define EXTERNAL_ONDISK_NOTOK	false
-
 PG_MODULE_MAGIC;
-
-typedef struct
-{
-	const PB3LD_Private *privdata;
-
-	Relation relation;
-	StringInfoData nulls;
-	StringInfoData formats;
-} PB3LD_FieldSetDescription;
 
 extern void _PG_init(void);
 extern void _PG_output_plugin_init(OutputPluginCallbacks *cb);
@@ -71,15 +52,6 @@ static void pb3ld_shutdown(LogicalDecodingContext *ctx);
 static void pb3ld_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn);
 static void pb3ld_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 							 XLogRecPtr commit_lsn);
-static void pb3ld_fds_init(const PB3LD_Private *privdata,
-						   PB3LD_FieldSetDescription *fds,
-						   Relation relation);
-static void pb3ld_fds_reset(PB3LD_FieldSetDescription *fds);
-static void pb3ld_fds_append_null(PB3LD_FieldSetDescription *fds, bool isnull);
-static void pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out);
-static void pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, bool isnull, int format);
-static void pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out);
-static bool pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid);
 static void pb3ld_write_TableDescription(const PB3LD_Private *privdata,
 										 StringInfo out,
 										 Relation relation);
@@ -132,6 +104,8 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 													 ALLOCSET_DEFAULT_MINSIZE,
 													 ALLOCSET_DEFAULT_INITSIZE,
 													 ALLOCSET_DEFAULT_MAXSIZE);
+	fsd_init(&privdata->change_fsd_new, privdata);
+	fsd_init(&privdata->change_fsd_key, privdata);
 
 	ctx->output_plugin_private = privdata;
 
@@ -337,302 +311,12 @@ pb3ld_write_TableDescription(const PB3LD_Private *privdata, StringInfo out, Rela
 }
 
 static void
-pb3ld_write_field_set_attribute(PB3LD_FieldSetDescription *fds,
-								StringInfo s,
-								const char *attname,
-								Oid typid,
-								Datum valdatum,
-								bool isnull,
-								bool external_ondisk_ok)
-{
-	if (isnull)
-	{
-		pb3ld_fds_append_null(fds, true);
-		/* don't care about the format */
-		pb3ld_fds_append_format(fds, true, 0);
-		pb3_append_bytes_kv(s, PB3LD_FSD_VALUES, NULL, 0);
-	}
-	else
-	{
-		bool binary_output;
-		Oid typoutput;
-		bool typisvarlena;
-		char *valuedata;
-		int valuelen;
-
-		binary_output = pb3ld_fds_type_binary(fds, typid);
-
-		if (binary_output)
-			getTypeBinaryOutputInfo(typid, &typoutput, &typisvarlena);
-		else
-			getTypeOutputInfo(typid, &typoutput, &typisvarlena);
-
-		if (typisvarlena && VARATT_IS_EXTERNAL_ONDISK(valdatum))
-		{
-			if (external_ondisk_ok)
-			{
-				/*
-				 * TOASTed datum whose value did not change.  The value itself
-				 * is not written to WAL in this case, and in the real database
-				 * it might have been VACUUMed away.  We don't really have any
-				 * options other than to omit the column.
-				 */
-				return;
-			}
-			else
-			{
-				/* shouldn't happen */
-				elog(ERROR, "attname %s of relation %u is VARATT_EXTERNAL_ONDISK",
-						attname, RelationGetRelid(fds->relation));
-			}
-		}
-
-		pb3ld_fds_append_null(fds, false);
-
-		if (typisvarlena)
-			valdatum = PointerGetDatum(PG_DETOAST_DATUM(valdatum));
-
-		if (binary_output)
-		{
-			bytea *val;
-
-			pb3ld_fds_append_format(fds, false, 1);
-			val = OidSendFunctionCall(typoutput, valdatum);
-			valuedata = VARDATA(val);
-			valuelen = VARSIZE(val) - VARHDRSZ;
-		}
-		else
-		{
-			pb3ld_fds_append_format(fds, false, 0);
-			valuedata = OidOutputFunctionCall(typoutput, valdatum);
-			valuelen = strlen(valuedata);
-		}
-
-		pb3_append_bytes_kv(s, PB3LD_FSD_VALUES, valuedata, valuelen);
-	}
-
-	pb3_append_string_kv(s, PB3LD_FSD_NAMES, attname);
-
-	switch (fds->privdata->type_oids_mode)
-	{
-		case PB3LD_FSD_TYPE_OIDS_DISABLED:
-			break;
-		case PB3LD_FSD_TYPE_OIDS_OMIT_NULLS:
-			if (!isnull)
-				pb3_append_oid_kv(s, PB3LD_FSD_TYPE_OIDS, typid);
-			break;
-		case PB3LD_FSD_TYPE_OIDS_FULL:
-			pb3_append_oid_kv(s, PB3LD_FSD_TYPE_OIDS, typid);
-			break;
-		default:
-			elog(ERROR, "unexpected type_oids_mode %d", (int) fds->privdata->type_oids_mode);
-	}
-}
-
-static void
-pb3ld_fds_init(const PB3LD_Private *privdata, PB3LD_FieldSetDescription *fds, Relation relation)
-{
-	memset(fds, 0, sizeof(PB3LD_FieldSetDescription));
-
-	fds->privdata = privdata;
-
-	fds->relation = relation;
-	initStringInfo(&fds->nulls);
-	if (privdata->formats_mode != PB3LD_FSD_FORMATS_DISABLED)
-		initStringInfo(&fds->formats);
-}
-
-static void
-pb3ld_fds_reset(PB3LD_FieldSetDescription *fds)
-{
-	fds->nulls.len = 0;
-	if (fds->privdata->formats_mode != PB3LD_FSD_FORMATS_DISABLED)
-		fds->formats.len = 0;
-}
-
-static void
-pb3ld_fds_append_null(PB3LD_FieldSetDescription *fds, bool isnull)
-{
-	if (isnull)
-		appendStringInfoChar(&fds->nulls, '\001');
-	else
-		appendStringInfoChar(&fds->nulls, '\000');
-}
-
-static void
-pb3ld_fds_write_nulls(PB3LD_FieldSetDescription *fds, StringInfo out)
-{
-	pb3_append_bytes_kv(out, PB3LD_FSD_NULLS, fds->nulls.data, fds->nulls.len);
-}
-
-static void
-pb3ld_fds_append_format(PB3LD_FieldSetDescription *fds, bool isnull, int format)
-{
-	switch (fds->privdata->formats_mode)
-	{
-		case PB3LD_FSD_FORMATS_DISABLED:
-			return;
-		case PB3LD_FSD_FORMATS_OMIT_NULLS:
-			if (!isnull)
-				appendStringInfoChar(&fds->formats, format);
-			break;
-		case PB3LD_FSD_FORMATS_LIBPQ:
-			/* fallthrough; handled in pb3ld_fds_write_formats */
-		case PB3LD_FSD_FORMATS_FULL:
-			appendStringInfoChar(&fds->formats, format);
-			break;
-		default:
-			elog(ERROR, "unexpected formats_mode %d", (int) fds->privdata->formats_mode);
-	}
-}
-
-static void
-pb3ld_fds_write_formats(PB3LD_FieldSetDescription *fds, StringInfo out)
-{
-	int i;
-
-	switch (fds->privdata->formats_mode)
-	{
-		case PB3LD_FSD_FORMATS_DISABLED:
-			return;
-		case PB3LD_FSD_FORMATS_LIBPQ:
-			for (i = 0;;i++)
-			{
-				if (i == fds->formats.len)
-				{
-					/* only text values; omit the "formats" field */
-					return;
-				}
-
-				if (fds->formats.data[i] != 0)
-					break;
-			}
-			pb3_append_bytes_kv(out, PB3LD_FSD_FORMATS, fds->formats.data, fds->formats.len);
-			break;
-		case PB3LD_FSD_FORMATS_OMIT_NULLS:
-			/* fallthrough; handled in pb3ld_fds_attribute */
-		case PB3LD_FSD_FORMATS_FULL:
-			pb3_append_bytes_kv(out, PB3LD_FSD_FORMATS, fds->formats.data, fds->formats.len);
-			break;
-		default:
-			elog(ERROR, "unexpected formats_mode %d", (int) fds->privdata->formats_mode);
-	}
-}
-
-static bool
-pb3ld_fds_type_binary(const PB3LD_FieldSetDescription *fds, Oid typid)
-{
-	PB3LD_Oid_Range *r = fds->privdata->binary_oid_ranges;
-	if (r == NULL)
-		return false;
-
-	while (r->min != InvalidOid)
-	{
-		if (typid < r->min)
-			return false;
-		else if (typid <= r->max)
-			return true;
-		r++;
-	}
-	return false;
-}
-
-/*
- * pb3ld_write_FieldSetDescription writes out a FieldSetDescription into the
- * output buffer "out".  The caller should have written the preceding varlen
- * key already.  "fds" should point to an initialized
- * PB3LD_FieldSetDescription, and must be reset before reuse.  If
- * rd_replidindex is a valid oid, the index with that oid is looked up, and
- * only the attributes that are part of that index are written out.
- *
- * A FieldSetDescription is an embedded message, so we must precede it with a
- * variable encoded length.  However, since we can't easily know the length of
- * the encoded message before we've written it out in its entirety, we reserve
- * some space and hope we got it right, or memmove accordingly if we didn't.
- * In most cases we reserve two bytes for the length.  That means that any
- * message with a length between 128 and 16383 bytes (inclusive) can be encoded
- * without having to memmove the data around.  However for the key fields in an
- * UPDATE or a DELETE we only reserve a single byte; the reasoning being that
- * most of the time we can fit everything in fewer than 128 bytes.
- */
-static void
-pb3ld_write_FieldSetDescription(PB3LD_FieldSetDescription *fds,
-								const int reserved_len,
-								StringInfo out,
-								ReorderBufferTupleBuf *tuple,
-								Oid rd_replidindex)
-{
-	TupleDesc tupdesc;
-	HeapTuple htup;
-	int natt;
-	int reserved_start;
-
-	reserved_start = out->len;
-	appendStringInfoSpaces(out, reserved_len);
-
-	htup = &tuple->tuple;
-	tupdesc = RelationGetDescr(fds->relation);
-
-	if (OidIsValid(rd_replidindex))
-	{
-		Relation indexrel;
-
-		indexrel = index_open(rd_replidindex, AccessShareLock);
-		for (natt = 0; natt < indexrel->rd_index->indnatts; natt++)
-		{
-			int					relattr = indexrel->rd_index->indkey.values[natt];
-			Form_pg_attribute	attr;
-			Datum				valdatum;
-			bool				isnull;
-			Oid					typid;
-
-			attr = tupdesc->attrs[relattr - 1];
-
-			if (attr->attisdropped || attr->attnum < 0)
-				elog(ERROR, "attribute %d of index %u is dropped or a system column", natt, rd_replidindex);
-
-			typid = attr->atttypid;
-			valdatum = heap_getattr(htup, relattr, tupdesc, &isnull);
-			pb3ld_write_field_set_attribute(fds, out, NameStr(attr->attname),
-											typid, valdatum, isnull, EXTERNAL_ONDISK_NOTOK);
-		}
-		index_close(indexrel, NoLock);
-	}
-	else
-	{
-		for (natt = 0; natt < tupdesc->natts; natt++)
-		{
-			Form_pg_attribute	attr;
-			Datum				valdatum;
-			bool				isnull;
-			Oid					typid;
-
-			attr = tupdesc->attrs[natt];
-
-			if (attr->attisdropped || attr->attnum < 0)
-				continue;
-
-			typid = attr->atttypid;
-			valdatum = heap_getattr(htup, natt + 1, tupdesc, &isnull);
-			pb3ld_write_field_set_attribute(fds, out, NameStr(attr->attname),
-											typid, valdatum, isnull, EXTERNAL_ONDISK_OK);
-		}
-	}
-
-	pb3ld_fds_write_nulls(fds, out);
-	pb3ld_fds_write_formats(fds, out);
-
-	pb3_fix_reserved_length(out, reserved_start, reserved_len);
-}
-
-static void
 pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			 Relation relation, ReorderBufferChange *change)
 {
 	PB3LD_Private *privdata = ctx->output_plugin_private;
 	char relreplident = relation->rd_rel->relreplident;
 	Oid rd_replidindex = InvalidOid;
-	PB3LD_FieldSetDescription fds;
 	MemoryContext oldcxt;
 
 	if (relreplident == REPLICA_IDENTITY_NOTHING)
@@ -672,35 +356,22 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	switch (change->action)
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
-			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_INSERT);
-
-			pb3_append_varlen_key(privdata->message_buf, PB3LD_INS_TABLE_DESC);
-			pb3ld_write_TableDescription(privdata, privdata->message_buf, relation);
-
 			Assert(change->data.tp.newtuple != NULL);
 
-			pb3ld_fds_init(privdata, &fds, relation);
+			fsd_reset(&privdata->change_fsd_new);
+			fsd_populate_from_tuple(&privdata->change_fsd_new, relation, change->data.tp.newtuple);
 
-			pb3_append_varlen_key(privdata->message_buf, PB3LD_INS_NEW_VALUES);
-			pb3ld_write_FieldSetDescription(&fds, 2, privdata->message_buf, change->data.tp.newtuple, InvalidOid);
-
+			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_INSERT);
+			pb3_append_varlen_key(privdata->message_buf, PB3LD_INS_TABLE_DESC);
+			pb3ld_write_TableDescription(privdata, privdata->message_buf, relation);
+			fsd_serialize(&privdata->change_fsd_new, PB3LD_INS_NEW_VALUES, privdata->message_buf);
 			pb3ld_wire_message_end(privdata, PB3LD_WMSG_INSERT);
 
 			if (change->data.tp.oldtuple != NULL)
 				elog(ERROR, "oldtuple is not NULL in INSERT");
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
-			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_UPDATE);
-
-			pb3_append_varlen_key(privdata->message_buf, PB3LD_UPD_TABLE_DESC);
-			pb3ld_write_TableDescription(privdata, privdata->message_buf, relation);
-
 			Assert(change->data.tp.newtuple != NULL);
-
-			pb3ld_fds_init(privdata, &fds, relation);
-
-			pb3_append_varlen_key(privdata->message_buf, PB3LD_UPD_NEW_VALUES);
-			pb3ld_write_FieldSetDescription(&fds, 2, privdata->message_buf, change->data.tp.newtuple, InvalidOid);
 
 			if (change->data.tp.oldtuple != NULL || OidIsValid(rd_replidindex))
 			{
@@ -710,34 +381,15 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					keytuple = change->data.tp.oldtuple;
 				else
 					keytuple = change->data.tp.newtuple;
-
-				pb3ld_fds_reset(&fds);
-
-				pb3_append_varlen_key(privdata->message_buf, PB3LD_UPD_KEY_FIELDS);
-				pb3ld_write_FieldSetDescription(&fds, 2, privdata->message_buf, keytuple, rd_replidindex);
 			}
-
-			pb3ld_wire_message_end(privdata, PB3LD_WMSG_UPDATE);
-
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
-			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_DELETE);
-
-			pb3_append_varlen_key(privdata->message_buf, PB3LD_DEL_TABLE_DESC);
-			pb3ld_write_TableDescription(privdata, privdata->message_buf, relation);
-
 			if (change->data.tp.newtuple != NULL)
 				elog(ERROR, "newtuple is not NULL in DELETE");
 
 			if (change->data.tp.oldtuple != NULL)
 			{
-				pb3ld_fds_init(privdata, &fds, relation);
-
-				pb3_append_varlen_key(privdata->message_buf, PB3LD_DEL_KEY_FIELDS);
-				pb3ld_write_FieldSetDescription(&fds, 1, privdata->message_buf, change->data.tp.oldtuple, rd_replidindex);
 			}
-
-			pb3ld_wire_message_end(privdata, PB3LD_WMSG_DELETE);
 
 			break;
 		default:
