@@ -38,6 +38,32 @@ static void fsd_add_attribute(PB3LD_FieldSetDescription *fsd,
 
 static bool fsd_should_output_binary_for_type(const PB3LD_FieldSetDescription *fsd, Oid typid);
 
+static int64 fsd_name_serialized_length(const char *attname);
+static int64 fsd_value_serialized_length(const int datalen);
+
+static int64
+fsd_name_serialized_length(const char *attname)
+{
+	int32 len = (int32) strlen(attname);
+	return pb3_varlen_key_size(PB3LD_FSD_NAMES) + pb3_varint_size(len) + len;
+}
+
+static int64
+fsd_value_serialized_length(const int datalen)
+{
+	return pb3_varlen_key_size(PB3LD_FSD_VALUES) + pb3_varint_size(datalen) + datalen;
+}
+
+static int64
+fsd_value_serialized_length(const int datalen)
+{
+	return pb3_varlen_key_size(PB3LD_FSD_VALUES) + pb3_varint_size(datalen) + datalen;
+}
+
+static int64
+fsd_format_serialized_length()
+{
+}
 
 void
 fsd_init(PB3LD_FieldSetDescription *fsd, const PB3LD_Private *privdata)
@@ -55,7 +81,7 @@ fsd_reset(PB3LD_FieldSetDescription *fsd)
 
 	fsd->names_total_length = 0;
 	fsd->values_total_length = 0;
-	fsd->num_nulls = 0;
+	fsd->binary_formats_length = 0;
 
 	fsd->names[next] = NULL;
 	fsd->values[next] = NULL;
@@ -153,12 +179,13 @@ fsd_add_attribute(PB3LD_FieldSetDescription *fsd,
 	if (isnull)
 	{
 		fsd->names[current] = attname;
-		fsd->names_total_length += strlen(attname);
-		fsd->values[current] = NULL;
+		fsd->names_total_length += fsd_name_serialized_length(attname);
+		fsd->values[current] = "";
 		fsd->value_lengths[current] = 0;
+		fsd->values_total_length += fsd_value_serialized_length(0);
 		fsd->type_oids[current] = typid;
 		fsd->nulls[current] = true;
-		fsd->num_nulls++;
+		fds->binary_formats_length += fsd_format_serialized_length(fsd->privdata, 
 		fsd->binary_formats[current] = true;
 		fsd->num_columns++;
 	}
@@ -216,10 +243,10 @@ fsd_add_attribute(PB3LD_FieldSetDescription *fsd,
 		}
 
 		fsd->names[current] = attname;
-		fsd->names_total_length += strlen(attname);
+		fsd->names_total_length += fsd_name_serialized_length(attname);
 		fsd->values[current] = valuedata;
 		fsd->value_lengths[current] = valuelen;
-		fsd->values_total_length += valuelen;
+		fsd->values_total_length += fsd_value_serialized_length(valuelen);
 		fsd->type_oids[current] = typid;
 		fsd->nulls[current] = false;
 		fsd->binary_formats[current] = binary_output;
@@ -254,19 +281,9 @@ fsd_serialize(PB3LD_FieldSetDescription *fsd, int32 field_number, StringInfo out
 	int i;
 
 	msglen = fsd->names_total_length + fsd->values_total_length;
-	switch (privdata->type_oids_mode)
-	{
-		case PB3LD_FSD_TYPE_OIDS_DISABLED:
-			break;
-		case PB3LD_FSD_TYPE_OIDS_OMIT_NULLS:
-			msglen += fsd->num_nulls;
-			break;
-		case PB3LD_FSD_TYPE_OIDS_FULL:
-			msglen += fsd->num_columns;
-			break;
-		default:
-			elog(ERROR, "unexpected type_oids_mode %d", fsd->privdata->type_oids_mode);
-	}
+	/* nulls array */
+	msglen += pb3_varlen_key_size(PB3LD_FSD_NULLS) + pb3_varint_size(fsd->num_columns) + fsd->num_columns;
+	msglen += fsd->binary_formats_length;
 
 	if (privdata->formats_mode != PB3LD_FSD_FORMATS_DISABLED)
 		elog(ERROR, "TODO");
@@ -280,17 +297,46 @@ fsd_serialize(PB3LD_FieldSetDescription *fsd, int32 field_number, StringInfo out
 
 	for (i = 0; i < fsd->num_columns; i++)
 	{
-		pb3_append_string_kv(privdata->message_buf, PB3LD_FSD_NAMES, fsd->names[i]);
+		Assert(fsd->names[i] != NULL);
+		Assert(fsd->values[i] != NULL);
+
+		pb3_append_string_kv(privdata->message_buf,
+							 PB3LD_FSD_NAMES, fsd->names[i]);
+
 		if (fsd->nulls[i])
 		{
-			if (privdata->type_oids_mode == PB3LD_FSD_TYPE_OIDS_FULL)
-				pb3_append_oid_kv(privdata->message_buf, PB3LD_FSD_TYPE_OIDS, fsd->type_oids[i]);
+			//if (privdata->type_oids_mode == PB3LD_FSD_TYPE_OIDS_FULL)
+			//	pb3_append_oid_kv(privdata->message_buf,
+			//					  PB3LD_FSD_TYPE_OIDS, fsd->type_oids[i]);
+
+			Assert(fsd->value_lengths[i] == 0);
+			Assert(*fsd->values[i] == '\x00');
+
+			pb3_append_bytes_kv(privdata->message_buf, PB3LD_FSD_VALUES,
+							    fsd->values[i], 0);
 		}
 		else
 		{
-			Assert(fsd->values[i] != NULL);
 
-			pb3_append_bytes_kv(privdata->message_buf, PB3LD_FSD_VALUES, fsd->values[i], fsd->value_lengths[i]);
+			pb3_append_bytes_kv(privdata->message_buf, PB3LD_FSD_VALUES,
+							    fsd->values[i], fsd->value_lengths[i]);
 		}
+	}
+
+	pb3_append_varlen_key(privdata->message_buf, PB3LD_FSD_NULLS);
+	pb3_append_int32(privdata->message_buf, (int32) fsd->num_columns);
+	for (i = 0; i < fsd->num_columns; i++)
+	{
+		if (fsd->nulls[i])
+			appendStringInfoChar(privdata->message_buf, '\001');
+		else
+			appendStringInfoChar(privdata->message_buf, '\000');
+	}
+
+	if (msglen != (int64) privdata->message_buf->len - msg_start)
+	{
+		elog(ERROR,
+			 "serialized FieldSetDescription message of unexpected length %zd (was expecting %zd)",
+			 (int64) privdata->message_buf->len - msg_start, msglen);
 	}
 }

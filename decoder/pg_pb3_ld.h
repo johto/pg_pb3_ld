@@ -38,7 +38,7 @@ typedef struct {
 	 */
 	int64 names_total_length;
 	int64 values_total_length;
-	int num_nulls;
+	int64 binary_formats_length;
 
 	const char *names[NUM_MAX_COLUMNS];
 	const char *values[NUM_MAX_COLUMNS];
@@ -109,11 +109,14 @@ typedef struct PB3LD_Private
 
 /* protobuf.c */
 
+extern int pb3_varint_size(int32 val);
+extern int32 pb3_varint_key_size(int32 field_number);
+extern int32 pb3_varlen_key_size(int32 field_number);
+
 extern void pb3_append_int32(StringInfo s, int32 val);
 
 extern void pb3_append_wmsg_header(StringInfo s, int32 msgtype);
 
-extern void pb3_append_varint_key(StringInfo s, int32 field_number);
 extern void pb3_append_varint_kv(StringInfo s, int32 field_number, int32 val);
 
 extern void pb3_append_oid_kv(StringInfo s, int32 field_number, Oid oid);
@@ -124,6 +127,7 @@ extern void pb3_append_string_kv(StringInfo s, int32 field_number, const char *s
 
 extern void pb3_append_bytes_kv(StringInfo s, int32 field_number, const char *bytes, int len);
 
+extern void pb3_append_varint_key(StringInfo s, int32 field_number);
 extern void pb3_append_varlen_key(StringInfo s, int32 field_number);
 
 extern void pb3_fix_reserved_length(StringInfo s, int reserved_start, int reserved_len);
