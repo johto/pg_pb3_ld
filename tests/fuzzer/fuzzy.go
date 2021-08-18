@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"log"
+	"math"
 	"math/rand"
 	"strconv"
 )
@@ -68,7 +69,13 @@ type FuzzyTransactionGenerator struct {
 }
 
 func NewFuzzyTransactionGenerator(schema *TestSchema) *FuzzyTransactionGenerator {
-	maxTransactions := int(1024 + (rand.Float64() * 268435456))
+	maxTransactions := 65536 + int(math.Abs(rand.NormFloat64()) * 16384)
+	if maxTransactions == 0 {
+		maxTransactions = 1
+	} else if maxTransactions < 0 {
+		maxTransactions = -maxTransactions
+	}
+
 	return &FuzzyTransactionGenerator{
 		schema: schema,
 		maxTransactions: maxTransactions,
@@ -127,10 +134,7 @@ func (tg *FuzzyTransactionGenerator) generateSQLValue(t SQLType, sizeBudget int)
 					length = 0
 					break
 				}
-				length = int(rand.NormFloat64() * 10 + 100)
-				if length < 0 {
-					length = -length
-				}
+				length = int(math.Abs(rand.NormFloat64()) * 200 + 300)
 				if length < 67108864 {
 					break
 				}

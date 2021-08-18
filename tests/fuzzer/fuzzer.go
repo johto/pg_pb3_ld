@@ -16,8 +16,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+var TOTAL_TRANSACTIONS int64 = 0
 
 const MAX_IDENTIFIER_LENGTH int = 63
 
@@ -321,6 +324,7 @@ func (f *Fuzzer) runTests(schema *TestSchema, generator TransactionGenerator) er
 		panic(err)
 	}
 
+	numTransactions := 0
 	for {
 		txn := generator.GenerateTransaction()
 		if txn == nil {
@@ -330,9 +334,11 @@ func (f *Fuzzer) runTests(schema *TestSchema, generator TransactionGenerator) er
 		now := time.Now()
 		if now.Sub(f.lastStatusMessage) > 5 * time.Minute {
 			log.Printf(
-				"DEBUG: working on table %s columns %s",
+				"DEBUG: working on table %s columns %s (%d transactions on table, %d total)",
 				schema.TableName,
 				strings.Join(schema.ColumnNames, ", "),
+				numTransactions,
+				atomic.LoadInt64(&TOTAL_TRANSACTIONS),
 			)
 			f.lastStatusMessage = now
 		}
@@ -397,6 +403,9 @@ func (f *Fuzzer) runTests(schema *TestSchema, generator TransactionGenerator) er
 				}
 			}
 		}
+
+		numTransactions++
+		atomic.AddInt64(&TOTAL_TRANSACTIONS, 1)
 	}
 
 	return nil
