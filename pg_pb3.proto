@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package pg_pb3_ld;
+
+option go_package = "github.com/johto/pg_pb3_ld";
+
+enum WireMessageType {
+    WMSG_BEGIN = 0;
+    WMSG_COMMIT = 1;
+    WMSG_INSERT = 2;
+    WMSG_UPDATE = 3;
+    WMSG_DELETE = 4;
+}
+
+message WireMessageHeader {
+    repeated WireMessageType types = 1;
+    repeated int32 offsets = 2;
+}
+
+message BeginTransaction {
+}
+
+message CommitTransaction {
+}
+
+message InsertDescription {
+    TableDescription table = 1;
+    FieldSetDescription new_values = 3;
+}
+
+message UpdateDescription {
+    TableDescription table = 1;
+    FieldSetDescription key_fields = 3;
+    FieldSetDescription new_values = 5;
+}
+
+message DeleteDescription {
+    TableDescription table = 1;
+    FieldSetDescription key_fields = 3;
+}
+
+message TableDescription {
+    string schema_name = 1;
+    string table_name = 2;
+    uint32 table_oid = 3;
+}
+
+message FieldSetDescription {
+    repeated string names = 2;
+    repeated bytes values = 3;
+    repeated uint32 type_oids = 4;
+    bytes nulls = 5;
+    bytes formats = 6;
+}
