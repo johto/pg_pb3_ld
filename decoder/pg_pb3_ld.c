@@ -313,7 +313,9 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		if (change->action == REORDER_BUFFER_CHANGE_UPDATE ||
 			change->action == REORDER_BUFFER_CHANGE_DELETE)
 		{
-			RelationGetIndexList(relation);
+			if (!relation->rd_indexvalid)
+				RelationGetIndexList(relation);
+
 			rd_replidindex = relation->rd_replidindex;
 			/* TODO */
 			if (privdata->repl_identity_required && !OidIsValid(rd_replidindex))
