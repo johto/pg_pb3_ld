@@ -76,6 +76,7 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 {
 	ListCell   *option;
 	PB3LD_Private *privdata;
+	MemoryContext oldcxt;
 
 	(void) is_init;
 
@@ -99,8 +100,10 @@ pb3ld_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 												  ALLOCSET_DEFAULT_MINSIZE,
 												  ALLOCSET_DEFAULT_INITSIZE,
 												  ALLOCSET_DEFAULT_MAXSIZE);
+	oldcxt = MemoryContextSwitchTo(privdata->buf_context);
 	privdata->header_buf = makeStringInfo();
 	privdata->message_buf = makeStringInfo();
+	MemoryContextSwitchTo(oldcxt);
 
 	privdata->begin_messages_enabled = false;
 	privdata->commit_messages_enabled = true;

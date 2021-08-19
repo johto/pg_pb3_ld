@@ -72,7 +72,12 @@ typedef struct {
 
 typedef struct PB3LD_Private
 {
+	/*
+	 * A memory context for the change callback to use.  This is reset after
+	 * every change to avoid leaking memory used by type output functions etc.
+	 */
 	MemoryContext change_context;
+
 	/* Pre-allocated memory for the change code to work with. */
 	PB3LD_FieldSetDescription change_fsd;
 
@@ -80,6 +85,11 @@ typedef struct PB3LD_Private
 
 	bool	sent_message_this_transaction;
 	int		wire_message_target_size;
+
+	/*
+	 * A memory context for header_buf and message_buf.  Only used for
+	 * tracking usage, and not actually reset.
+	 */
 	MemoryContext buf_context;
 	StringInfo header_buf;
 	StringInfo message_buf;
