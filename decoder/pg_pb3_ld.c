@@ -339,6 +339,7 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
 			Assert(change->data.tp.newtuple != NULL);
+			Assert(change->data.tp.oldtuple == NULL);
 
 			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_INSERT);
 
@@ -350,9 +351,6 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			fsd_serialize(&privdata->change_fsd, PB3LD_INS_NEW_VALUES, privdata->message_buf);
 
 			pb3ld_wire_message_end(privdata, PB3LD_WMSG_INSERT);
-
-			if (change->data.tp.oldtuple != NULL)
-				elog(ERROR, "oldtuple is not NULL in INSERT");
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
 			Assert(change->data.tp.newtuple != NULL);
@@ -386,8 +384,7 @@ pb3ld_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			pb3ld_wire_message_end(privdata, PB3LD_WMSG_UPDATE);
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
-			if (change->data.tp.newtuple != NULL)
-				elog(ERROR, "newtuple is not NULL in DELETE");
+			Assert(change->data.tp.newtuple == NULL);
 
 			pb3ld_wire_message_begin(privdata, PB3LD_WMSG_DELETE);
 
