@@ -231,7 +231,6 @@ fsd_serialize(PB3LD_FieldSetDescription *fsd, int32 field_number, StringInfo out
 {
 	const PB3LD_Private* privdata = fsd->privdata;
 	StringInfoData tmpbuf;
-	StringInfoData formatsbuf;
 	int i;
 
 	initStringInfo(&tmpbuf);
@@ -276,6 +275,7 @@ fsd_serialize(PB3LD_FieldSetDescription *fsd, int32 field_number, StringInfo out
 
 	if (privdata->formats_mode != PB3LD_FSD_FORMATS_DISABLED)
 	{
+		StringInfoData formatsbuf;
 		initStringInfo(&formatsbuf);
 
 		for (i = 0; i < fsd->num_columns; i++)
@@ -291,6 +291,8 @@ fsd_serialize(PB3LD_FieldSetDescription *fsd, int32 field_number, StringInfo out
 		pb3_append_varlen_key(&tmpbuf, PB3LD_FSD_FORMATS);
 		pb3_append_int32(&tmpbuf, (int32) formatsbuf.len);
 		appendBinaryStringInfo(&tmpbuf, formatsbuf.data, formatsbuf.len);
+
+		pfree(formatsbuf.data);
 	}
 
 	pb3_append_varlen_key(privdata->message_buf, field_number);
